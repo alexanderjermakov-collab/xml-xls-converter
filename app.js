@@ -1,6 +1,7 @@
 const TARGET_COLUMNS = [5, 8, 11, 14];
 const APPLICATION_NAME = "Sharp Titan TV. AQ. XML-XLS converter";
-const XLS_HEADER_ROW_CANDIDATES = [24, 25];
+const XLS_HEADER_ROW_NUMBER = 25;
+const XLS_DATA_START_ROW_NUMBER = 26;
 const MAP_HEADER_SCAN_LIMIT = 100;
 const TARGET_XLS_SHEET_NAME = "AQ_Tbl";
 const TARGET_MAP_SHEET_NAME = "MAP";
@@ -160,7 +161,7 @@ function readFileAsText(file) {
 
 async function readWorkbook(file) {
   const buffer = await readFileAsArrayBuffer(file);
-  return XLSX.read(buffer, { type: "array", cellDates: true, cellNF: true });
+  return XLSX.read(buffer, { type: "array", cellDates: true, cellNF: true, cellStyles: true, bookVBA: true });
 }
 
 function sheetRange(sheet) {
@@ -321,9 +322,20 @@ function getCellValue(row, indexes, header) {
 
 function setSheetCell(sheet, rowIndex, columnNumber, value, previousCell) {
   const address = cellAddress(rowIndex, columnNumber);
-  const newCell = { t: "s", v: String(value) };
-  if (previousCell?.z) newCell.z = previousCell.z;
-  sheet[address] = { ...(previousCell || {}), ...newCell };
+  const textValue = String(value);
+  const existingCell = previousCell ? { ...previousCell } : { t: "s" };
+
+  if (previousCell?.t === "n" && textValue.trim() !== "" && !Number.isNaN(Number(textValue))) {
+    existingCell.v = Number(textValue);
+    existingCell.t = "n";
+  } else {
+    existingCell.v = textValue;
+    existingCell.t = "s";
+  }
+
+  delete existingCell.w;
+
+  sheet[address] = existingCell;
 }
 
 function extractRows(workbook, headers, options = {}) {
@@ -568,7 +580,7 @@ async function convert() {
       label: "XLS file",
       sheetName: TARGET_XLS_SHEET_NAME,
       allowSheetFallback: true,
-      fixedHeaderRowNumbers: XLS_HEADER_ROW_CANDIDATES
+      fixedHeaderRowNumber: XLS_HEADER_ROW_NUMBER
     });
     setProgress(65);
     const targetIndex = buildTargetRowIndex(targetData.rows);
@@ -613,7 +625,7 @@ async function convert() {
     state.logText = buildLog(records, version, {
       xlsSheetName: targetData.sheetName,
       xlsHeaderRow: targetData.header.rowNumber,
-      xlsDataStartRow: targetData.header.rowNumber + 1,
+      xlsDataStartRow: XLS_DATA_START_ROW_NUMBER,
       mapSheetName: mapData.sheetName,
       mapHeaderRow: mapData.header.rowNumber
     });
@@ -639,7 +651,7 @@ function downloadWorkbook() {
   if (!state.workbook) return;
   const outputName = state.outputName || "converted.xlsx";
   const bookType = /\.xls$/i.test(outputName) ? "xls" : "xlsx";
-  XLSX.writeFile(state.workbook, outputName, { bookType });
+  XLSX.writeFile(state.workbook, outputName, { bookType, cellStyles: true, bookVBA: true });
 }
 
 function downloadLog() {
