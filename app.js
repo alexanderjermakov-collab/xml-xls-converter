@@ -21,16 +21,17 @@ const elements = {
   xlsInput: document.getElementById("xlsInput"),
   mapInput: document.getElementById("mapInput"),
   outputNameInput: document.getElementById("outputNameInput"),
-  uploadXmlButton: document.getElementById("uploadXmlButton"),
-  uploadMapButton: document.getElementById("uploadMapButton"),
   convertButton: document.getElementById("convertButton"),
   downloadXlsButton: document.getElementById("downloadXlsButton"),
-  downloadLogButton: document.getElementById("downloadLogButton"),
   logOutput: document.getElementById("logOutput"),
   logMeta: document.getElementById("logMeta"),
   statusText: document.getElementById("statusText"),
+  progressFill: document.getElementById("progressFill"),
+  progressValue: document.getElementById("progressValue"),
+  progressTrack: document.querySelector(".progress-track"),
+  errorText: document.getElementById("errorText"),
   summaryText: document.getElementById("summaryText"),
-  statusBar: document.querySelector(".status-bar")
+  bottomMonitor: document.querySelector(".bottom-monitor")
 };
 
 function normalise(value) {
@@ -52,7 +53,15 @@ function isRelevant(value) {
 function setStatus(message, summary = "", isError = false) {
   elements.statusText.textContent = message;
   elements.summaryText.textContent = summary;
-  elements.statusBar.classList.toggle("error", isError);
+  elements.bottomMonitor.classList.toggle("error", isError);
+  elements.errorText.textContent = isError ? message : "No errors.";
+}
+
+function setProgress(value) {
+  const progress = Math.max(0, Math.min(100, Number(value) || 0));
+  elements.progressFill.style.width = `${progress}%`;
+  elements.progressValue.textContent = `${progress}%`;
+  elements.progressTrack.setAttribute("aria-valuenow", String(progress));
 }
 
 function setFile(targetId, file) {
@@ -423,7 +432,7 @@ async function convert() {
   try {
     elements.convertButton.disabled = true;
     elements.downloadXlsButton.disabled = true;
-    elements.downloadLogButton.disabled = true;
+    setProgress(0);
     setStatus("Converting files...", "", false);
 
     const version = elements.versionInput.value.trim();
@@ -432,15 +441,18 @@ async function convert() {
     if (!state.xlsFile) throw new Error("Input XLS file is required.");
     if (!state.mapFile) throw new Error("MAP file is required.");
     if (!window.XLSX) throw new Error("Spreadsheet library could not be loaded. Check the network connection and reload the page.");
+    setProgress(10);
 
     const [xmlText, targetWorkbook, mapWorkbook] = await Promise.all([
       readFileAsText(state.xmlFile),
       readWorkbook(state.xlsFile),
       readWorkbook(state.mapFile)
     ]);
+    setProgress(35);
 
     const xmlDocument = new DOMParser().parseFromString(xmlText, "application/xml");
     if (xmlDocument.querySelector("parsererror")) throw new Error("XML file could not be parsed.");
+    setProgress(50);
 
     const candidates = buildXmlCandidates(xmlDocument);
     const mapData = extractRows(mapWorkbook, REQUIRED_MAP_HEADERS, { label: "MAP file" });
@@ -449,6 +461,7 @@ async function convert() {
       fixedHeaderRowNumber: XLS_HEADER_ROW_NUMBER,
       dataStartRowNumber: XLS_DATA_START_ROW_NUMBER
     });
+    setProgress(65);
     const targetIndex = buildTargetRowIndex(targetData.rows);
     const records = [];
     const misses = [];
@@ -482,6 +495,7 @@ async function convert() {
         }
       });
     });
+    setProgress(90);
 
     state.workbook = targetWorkbook;
     const names = buildOutputNames(version);
@@ -492,11 +506,12 @@ async function convert() {
     elements.logOutput.value = state.logText;
     elements.logMeta.textContent = `${records.length} modified cells, ${misses.length} unmapped rows`;
     elements.downloadXlsButton.disabled = false;
-    elements.downloadLogButton.disabled = false;
+    setProgress(100);
 
     const summary = misses.length ? `${records.length} changes, ${misses.length} rows skipped` : `${records.length} changes`;
     setStatus("Conversion complete.", summary, false);
   } catch (error) {
+    setProgress(0);
     setStatus(error.message, "", true);
   } finally {
     elements.convertButton.disabled = false;
@@ -521,11 +536,8 @@ function downloadLog() {
 }
 
 wireDropZones();
-elements.uploadXmlButton.addEventListener("click", () => elements.xmlInput.click());
-elements.uploadMapButton.addEventListener("click", () => elements.mapInput.click());
 elements.convertButton.addEventListener("click", convert);
 elements.downloadXlsButton.addEventListener("click", downloadWorkbook);
-elements.downloadLogButton.addEventListener("click", downloadLog);
 elements.versionInput.addEventListener("input", () => {
   updateOutputNameSuggestion();
   setStatus("Waiting for files.", readinessSummary());

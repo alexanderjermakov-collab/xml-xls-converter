@@ -8,6 +8,7 @@
   --accent: #0f766e;
   --accent-dark: #115e59;
   --danger: #b42318;
+  --danger-soft: #fff1f0;
   --soft: #e7f5f3;
   --shadow: 0 18px 50px rgba(31, 41, 55, 0.12);
 }
@@ -244,12 +245,15 @@ h2 {
   cursor: not-allowed;
 }
 
-.status-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.bottom-monitor {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
   gap: 16px;
   margin: 0 clamp(18px, 4vw, 48px) 28px;
+}
+
+.progress-window,
+.error-window {
   padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -257,8 +261,62 @@ h2 {
   color: var(--muted);
 }
 
-.status-bar.error {
+.progress-window {
+  display: grid;
+  gap: 10px;
+}
+
+.progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ink);
+}
+
+.progress-track {
+  width: 100%;
+  height: 14px;
+  overflow: hidden;
+  border: 1px solid #b8c7d6;
+  border-radius: 999px;
+  background: #edf2f7;
+}
+
+#progressFill {
+  width: 0%;
+  height: 100%;
+  background: var(--accent);
+  transition: width 180ms ease;
+}
+
+.error-window {
+  display: grid;
+  gap: 8px;
+}
+
+.error-window strong {
+  color: var(--ink);
+}
+
+#errorText {
+  min-height: 42px;
+  padding: 10px;
+  border: 1px solid #dbe4ee;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.bottom-monitor.error .error-window {
   border-color: #f5b5ae;
+  background: var(--danger-soft);
+}
+
+.bottom-monitor.error #errorText {
+  border-color: #f5b5ae;
+  background: #ffffff;
   color: var(--danger);
 }
 
@@ -269,12 +327,15 @@ h2 {
 
   .app-title,
   .panel-heading,
-  .status-bar {
+  .bottom-monitor {
     align-items: stretch;
-    flex-direction: column;
   }
 
   .command-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .bottom-monitor {
     grid-template-columns: 1fr;
   }
 

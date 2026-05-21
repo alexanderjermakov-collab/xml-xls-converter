@@ -85,22 +85,32 @@
     </main>
 
     <nav class="command-bar" aria-label="Converter actions">
-      <div class="command-group left">
-        <button id="uploadXmlButton" type="button">Upload input XML file</button>
-        <button id="uploadMapButton" type="button">Upload input MAP file</button>
-      </div>
+      <div class="command-group left" aria-hidden="true"></div>
       <div class="command-group center">
         <button id="convertButton" type="button">Convert</button>
       </div>
       <div class="command-group right">
         <button id="downloadXlsButton" type="button" disabled>Download XLS file</button>
-        <button id="downloadLogButton" type="button" disabled>Download LOG file</button>
       </div>
     </nav>
 
-    <section class="status-bar" aria-live="polite">
-      <span id="statusText">Waiting for files.</span>
-      <span id="summaryText"></span>
+    <section class="bottom-monitor" aria-live="polite">
+      <div class="progress-window">
+        <div class="progress-header">
+          <strong>Conversion process</strong>
+          <span id="progressValue">0%</span>
+        </div>
+        <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div id="progressFill"></div>
+        </div>
+        <span id="statusText">Waiting for files.</span>
+      </div>
+
+      <div class="error-window">
+        <strong>Application error messages</strong>
+        <div id="errorText">No errors.</div>
+        <span id="summaryText"></span>
+      </div>
     </section>
 
     <script src="app.js"></script>
