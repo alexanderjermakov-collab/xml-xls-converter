@@ -1,4 +1,4 @@
-# XML-XLS converter
+# Sharp Titan TV. AQ. XML-XLS converter
 
 Version 1.0 web application for updating TitanOS XLS audio settings with values extracted from a Dolby Tuning Tool XML file.
 

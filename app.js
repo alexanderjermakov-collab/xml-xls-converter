@@ -1,4 +1,5 @@
 const TARGET_COLUMNS = [5, 8, 11, 14];
+const APPLICATION_NAME = "Sharp Titan TV. AQ. XML-XLS converter";
 const XLS_HEADER_ROW_CANDIDATES = [24, 25];
 const MAP_HEADER_SCAN_LIMIT = 100;
 const TARGET_XLS_SHEET_NAME = "AQ_Tbl";
@@ -490,7 +491,8 @@ function csvEscape(value) {
 
 function buildLog(records, version, metadata = {}) {
   const lines = [
-    `XML-XLS converter version,${csvEscape(version)}`,
+    `Application,${csvEscape(APPLICATION_NAME)}`,
+    `Application version,${csvEscape(version)}`,
     `Generated,${csvEscape(new Date().toISOString())}`,
     `XLS worksheet,${csvEscape(metadata.xlsSheetName || "")}`,
     `XLS header row,${metadata.xlsHeaderRow || ""}`,
