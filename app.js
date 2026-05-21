@@ -1,6 +1,7 @@
 const TARGET_COLUMNS = [5, 8, 11, 14];
-const HEADER_ROW_NUMBER = 25;
-const DATA_START_ROW_NUMBER = 26;
+const XLS_HEADER_ROW_NUMBER = 25;
+const XLS_DATA_START_ROW_NUMBER = 26;
+const MAP_HEADER_SCAN_LIMIT = 100;
 const REQUIRED_MAP_HEADERS = ["DSP", "Description", "Parameters", "Mapped to DAP XML"];
 const OUTPUT_HEADERS = ["DSP", "Description", "Parameters", "Column", "Previous Value", "New Value", "XML Mapping"];
 
@@ -165,24 +166,45 @@ function readRow(sheet, rowIndex, lastColumnIndex) {
   return row;
 }
 
-function findHeaderRow(sheet, requiredHeaders) {
-  const range = sheetRange(sheet);
-  const rowIndex = HEADER_ROW_NUMBER - 1;
-  const row = readRow(sheet, rowIndex, Math.max(range.e.c, 20));
-  const normalisedRow = row.map(normalise);
-  const hasAllHeaders = requiredHeaders.every((header) => normalisedRow.includes(normalise(header)));
-
-  if (!hasAllHeaders) {
-    throw new Error(`Header row ${HEADER_ROW_NUMBER} must contain required columns: ${requiredHeaders.join(", ")}.`);
-  }
-
+function headerIndexes(row) {
   const indexes = {};
   row.forEach((header, columnIndex) => {
     const key = normalise(header);
     if (key && indexes[key] === undefined) indexes[key] = columnIndex;
   });
+  return indexes;
+}
 
-  return { rowIndex, indexes, range };
+function rowContainsHeaders(row, requiredHeaders) {
+  const normalisedRow = row.map(normalise);
+  return requiredHeaders.every((header) => normalisedRow.includes(normalise(header)));
+}
+
+function findHeaderRow(sheet, requiredHeaders, options = {}) {
+  const range = sheetRange(sheet);
+  const lastColumnIndex = Math.max(range.e.c, 20);
+  const label = options.label || "Workbook";
+
+  if (options.fixedHeaderRowNumber) {
+    const rowIndex = options.fixedHeaderRowNumber - 1;
+    const row = readRow(sheet, rowIndex, lastColumnIndex);
+
+    if (!rowContainsHeaders(row, requiredHeaders)) {
+      throw new Error(`${label} header row ${options.fixedHeaderRowNumber} must contain required columns: ${requiredHeaders.join(", ")}.`);
+    }
+
+    return { rowIndex, indexes: headerIndexes(row), range };
+  }
+
+  const scanEndRow = Math.min(range.e.r, MAP_HEADER_SCAN_LIMIT - 1);
+  for (let rowIndex = range.s.r; rowIndex <= scanEndRow; rowIndex += 1) {
+    const row = readRow(sheet, rowIndex, lastColumnIndex);
+    if (rowContainsHeaders(row, requiredHeaders)) {
+      return { rowIndex, indexes: headerIndexes(row), range };
+    }
+  }
+
+  throw new Error(`${label} header row was not found in the first ${MAP_HEADER_SCAN_LIMIT} rows. Required columns: ${requiredHeaders.join(", ")}.`);
 }
 
 function getCellValue(row, indexes, header) {
@@ -196,12 +218,13 @@ function setSheetCell(sheet, rowIndex, columnNumber, value, previousCell) {
   sheet[address] = { ...(previousCell || {}), ...newCell };
 }
 
-function extractRows(workbook, headers) {
+function extractRows(workbook, headers, options = {}) {
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  const header = findHeaderRow(sheet, headers);
+  const header = findHeaderRow(sheet, headers, options);
   const rows = [];
+  const dataStartRowIndex = options.dataStartRowNumber ? options.dataStartRowNumber - 1 : header.rowIndex + 1;
 
-  for (let rowIndex = DATA_START_ROW_NUMBER - 1; rowIndex <= header.range.e.r; rowIndex += 1) {
+  for (let rowIndex = dataStartRowIndex; rowIndex <= header.range.e.r; rowIndex += 1) {
     const row = readRow(sheet, rowIndex, Math.max(header.range.e.c, 20));
     const hasData = row.some((value) => String(value ?? "").trim() !== "");
     if (!hasData) continue;
@@ -361,8 +384,8 @@ function buildLog(records, version) {
   const lines = [
     `XML-XLS converter version,${csvEscape(version)}`,
     `Generated,${csvEscape(new Date().toISOString())}`,
-    `Header row,${HEADER_ROW_NUMBER}`,
-    `Data start row,${DATA_START_ROW_NUMBER}`,
+    `XLS header row,${XLS_HEADER_ROW_NUMBER}`,
+    `XLS data start row,${XLS_DATA_START_ROW_NUMBER}`,
     "",
     OUTPUT_HEADERS.map(csvEscape).join(",")
   ];
@@ -420,8 +443,12 @@ async function convert() {
     if (xmlDocument.querySelector("parsererror")) throw new Error("XML file could not be parsed.");
 
     const candidates = buildXmlCandidates(xmlDocument);
-    const mapData = extractRows(mapWorkbook, REQUIRED_MAP_HEADERS);
-    const targetData = extractRows(targetWorkbook, ["DSP", "Description", "Parameters"]);
+    const mapData = extractRows(mapWorkbook, REQUIRED_MAP_HEADERS, { label: "MAP file" });
+    const targetData = extractRows(targetWorkbook, ["DSP", "Description", "Parameters"], {
+      label: "XLS file",
+      fixedHeaderRowNumber: XLS_HEADER_ROW_NUMBER,
+      dataStartRowNumber: XLS_DATA_START_ROW_NUMBER
+    });
     const targetIndex = buildTargetRowIndex(targetData.rows);
     const records = [];
     const misses = [];
