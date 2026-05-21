@@ -1,6 +1,5 @@
 const TARGET_COLUMNS = [5, 8, 11, 14];
-const XLS_HEADER_ROW_NUMBER = 25;
-const XLS_DATA_START_ROW_NUMBER = 26;
+const XLS_HEADER_ROW_CANDIDATES = [24, 25];
 const MAP_HEADER_SCAN_LIMIT = 100;
 const REQUIRED_MAP_HEADERS = ["DSP", "Description", "Parameters", "Mapped to DAP XML"];
 const OUTPUT_HEADERS = ["DSP", "Description", "Parameters", "Column", "Previous Value", "New Value", "XML Mapping"];
@@ -194,6 +193,19 @@ function findHeaderRow(sheet, requiredHeaders, options = {}) {
   const lastColumnIndex = Math.max(range.e.c, 20);
   const label = options.label || "Workbook";
 
+  if (options.fixedHeaderRowNumbers?.length) {
+    for (const fixedHeaderRowNumber of options.fixedHeaderRowNumbers) {
+      const rowIndex = fixedHeaderRowNumber - 1;
+      const row = readRow(sheet, rowIndex, lastColumnIndex);
+
+      if (rowContainsHeaders(row, requiredHeaders)) {
+        return { rowIndex, rowNumber: fixedHeaderRowNumber, indexes: headerIndexes(row), range };
+      }
+    }
+
+    throw new Error(`${label} header row must be ${options.fixedHeaderRowNumbers.join(" or ")} and contain required columns: ${requiredHeaders.join(", ")}.`);
+  }
+
   if (options.fixedHeaderRowNumber) {
     const rowIndex = options.fixedHeaderRowNumber - 1;
     const row = readRow(sheet, rowIndex, lastColumnIndex);
@@ -202,14 +214,14 @@ function findHeaderRow(sheet, requiredHeaders, options = {}) {
       throw new Error(`${label} header row ${options.fixedHeaderRowNumber} must contain required columns: ${requiredHeaders.join(", ")}.`);
     }
 
-    return { rowIndex, indexes: headerIndexes(row), range };
+    return { rowIndex, rowNumber: options.fixedHeaderRowNumber, indexes: headerIndexes(row), range };
   }
 
   const scanEndRow = Math.min(range.e.r, MAP_HEADER_SCAN_LIMIT - 1);
   for (let rowIndex = range.s.r; rowIndex <= scanEndRow; rowIndex += 1) {
     const row = readRow(sheet, rowIndex, lastColumnIndex);
     if (rowContainsHeaders(row, requiredHeaders)) {
-      return { rowIndex, indexes: headerIndexes(row), range };
+      return { rowIndex, rowNumber: rowIndex + 1, indexes: headerIndexes(row), range };
     }
   }
 
@@ -231,7 +243,7 @@ function extractRows(workbook, headers, options = {}) {
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const header = findHeaderRow(sheet, headers, options);
   const rows = [];
-  const dataStartRowIndex = options.dataStartRowNumber ? options.dataStartRowNumber - 1 : header.rowIndex + 1;
+  const dataStartRowIndex = header.rowIndex + 1;
 
   for (let rowIndex = dataStartRowIndex; rowIndex <= header.range.e.r; rowIndex += 1) {
     const row = readRow(sheet, rowIndex, Math.max(header.range.e.c, 20));
@@ -389,12 +401,13 @@ function csvEscape(value) {
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-function buildLog(records, version) {
+function buildLog(records, version, metadata = {}) {
   const lines = [
     `XML-XLS converter version,${csvEscape(version)}`,
     `Generated,${csvEscape(new Date().toISOString())}`,
-    `XLS header row,${XLS_HEADER_ROW_NUMBER}`,
-    `XLS data start row,${XLS_DATA_START_ROW_NUMBER}`,
+    `XLS header row,${metadata.xlsHeaderRow || ""}`,
+    `XLS data start row,${metadata.xlsDataStartRow || ""}`,
+    `MAP header row,${metadata.mapHeaderRow || ""}`,
     "",
     OUTPUT_HEADERS.map(csvEscape).join(",")
   ];
@@ -458,8 +471,7 @@ async function convert() {
     const mapData = extractRows(mapWorkbook, REQUIRED_MAP_HEADERS, { label: "MAP file" });
     const targetData = extractRows(targetWorkbook, ["DSP", "Description", "Parameters"], {
       label: "XLS file",
-      fixedHeaderRowNumber: XLS_HEADER_ROW_NUMBER,
-      dataStartRowNumber: XLS_DATA_START_ROW_NUMBER
+      fixedHeaderRowNumbers: XLS_HEADER_ROW_CANDIDATES
     });
     setProgress(65);
     const targetIndex = buildTargetRowIndex(targetData.rows);
@@ -501,7 +513,11 @@ async function convert() {
     const names = buildOutputNames(version);
     state.outputName = names.workbookName;
     state.logName = names.logName;
-    state.logText = buildLog(records, version);
+    state.logText = buildLog(records, version, {
+      xlsHeaderRow: targetData.header.rowNumber,
+      xlsDataStartRow: targetData.header.rowNumber + 1,
+      mapHeaderRow: mapData.header.rowNumber
+    });
 
     elements.logOutput.value = state.logText;
     elements.logMeta.textContent = `${records.length} modified cells, ${misses.length} unmapped rows`;

@@ -11,10 +11,10 @@ The page loads SheetJS from the official CDN to read and write `.xls`, `.xlsx`, 
 ## Conversion rules
 
 - Required inputs: Dolby XML file, input XLS workbook, MAP workbook, and a non-empty version number.
-- XLS column headers are read from Excel line 25.
-- XLS data rows are read from Excel line 26 onward.
+- XLS column headers are read from Excel line 24 or line 25.
+- XLS data rows are read from the line immediately after the detected header row.
 - The MAP workbook header row is detected automatically in the first 100 rows and must contain `DSP`, `Description`, `Parameters`, and `Mapped to DAP XML`.
-- The target XLS workbook line 25 must contain `DSP`, `Description`, and `Parameters`.
+- The target XLS workbook line 24 or line 25 must contain `DSP`, `Description`, and `Parameters`.
 - Rows with empty `Mapped to DAP XML` or `Not relevant` are skipped.
 - The converter updates GAIN columns 5, 8, 11, and 14 with the same XML-derived value.
 - The log contains DSP, Description, Parameters, target column number, previous value, new value, and XML mapping for each modified cell.
