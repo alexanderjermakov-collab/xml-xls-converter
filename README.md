@@ -1,0 +1,22 @@
+# XML-XLS converter
+
+Version 1.0 web application for updating TitanOS XLS audio settings with values extracted from a Dolby Tuning Tool XML file.
+
+## How to run
+
+Open `index.html` in a browser. The app is client-side only and keeps files on the local machine.
+
+The page loads SheetJS from the official CDN to read and write `.xls`, `.xlsx`, `.xlsm`, and `.csv` workbooks. An internet connection is required unless the library is vendored locally later.
+
+## Conversion rules
+
+- Required inputs: Dolby XML file, input XLS workbook, MAP workbook, and a non-empty version number.
+- Column headers are read from Excel line 25.
+- Data rows are read from Excel line 26 onward.
+- The MAP workbook header row must contain `DSP`, `Description`, `Parameters`, and `Mapped to DAP XML`.
+- The target XLS workbook header row must contain `DSP`, `Description`, and `Parameters`.
+- Rows with empty `Mapped to DAP XML` or `Not relevant` are skipped.
+- The converter updates GAIN columns 5, 8, 11, and 14 with the same XML-derived value.
+- The log contains DSP, Description, Parameters, target column number, previous value, new value, and XML mapping for each modified cell.
+
+If the XML contains repeated item names, the converter requires all relevant names to match: the mapped XML item name, `DSP`, and `Description`. Empty cells and cells marked `Not relevant` are excluded from XML matching.

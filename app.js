@@ -1,0 +1,506 @@
+const TARGET_COLUMNS = [5, 8, 11, 14];
+const HEADER_ROW_NUMBER = 25;
+const DATA_START_ROW_NUMBER = 26;
+const REQUIRED_MAP_HEADERS = ["DSP", "Description", "Parameters", "Mapped to DAP XML"];
+const OUTPUT_HEADERS = ["DSP", "Description", "Parameters", "Column", "Previous Value", "New Value", "XML Mapping"];
+
+const state = {
+  xmlFile: null,
+  xlsFile: null,
+  mapFile: null,
+  workbook: null,
+  outputName: "",
+  logText: "",
+  logName: ""
+};
+
+const elements = {
+  versionInput: document.getElementById("versionInput"),
+  xmlInput: document.getElementById("xmlInput"),
+  xlsInput: document.getElementById("xlsInput"),
+  mapInput: document.getElementById("mapInput"),
+  outputNameInput: document.getElementById("outputNameInput"),
+  uploadXmlButton: document.getElementById("uploadXmlButton"),
+  uploadMapButton: document.getElementById("uploadMapButton"),
+  convertButton: document.getElementById("convertButton"),
+  downloadXlsButton: document.getElementById("downloadXlsButton"),
+  downloadLogButton: document.getElementById("downloadLogButton"),
+  logOutput: document.getElementById("logOutput"),
+  logMeta: document.getElementById("logMeta"),
+  statusText: document.getElementById("statusText"),
+  summaryText: document.getElementById("summaryText"),
+  statusBar: document.querySelector(".status-bar")
+};
+
+function normalise(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_\-./\\()[\]{}:;]+/g, "");
+}
+
+function cellAddress(rowIndex, columnNumber) {
+  return XLSX.utils.encode_cell({ r: rowIndex, c: columnNumber - 1 });
+}
+
+function isRelevant(value) {
+  const text = String(value ?? "").trim();
+  return text !== "" && normalise(text) !== "notrelevant";
+}
+
+function setStatus(message, summary = "", isError = false) {
+  elements.statusText.textContent = message;
+  elements.summaryText.textContent = summary;
+  elements.statusBar.classList.toggle("error", isError);
+}
+
+function setFile(targetId, file) {
+  if (!file) return;
+
+  if (targetId === "xmlInput") state.xmlFile = file;
+  if (targetId === "xlsInput") state.xlsFile = file;
+  if (targetId === "mapInput") state.mapFile = file;
+  if (targetId === "outputNameInput") {
+    elements.outputNameInput.value = file.name.replace(/\.(xls|xlsx|xlsm|csv)$/i, "");
+  }
+
+  const zone = document.querySelector(`.drop-zone[data-target="${targetId}"]`);
+  const label = zone?.querySelector("span");
+  if (label && targetId !== "outputNameInput") label.textContent = file.name;
+  if (label && targetId === "outputNameInput") label.textContent = elements.outputNameInput.value;
+  updateOutputNameSuggestion();
+  setStatus("Files updated.", readinessSummary());
+}
+
+function readinessSummary() {
+  const ready = [
+    state.xmlFile ? "XML" : null,
+    state.xlsFile ? "XLS" : null,
+    state.mapFile ? "MAP" : null,
+    elements.versionInput.value.trim() ? "version" : null
+  ].filter(Boolean);
+  return ready.length ? `${ready.join(", ")} ready` : "";
+}
+
+function updateOutputNameSuggestion() {
+  const outputZone = document.querySelector('.drop-zone[data-target="outputNameInput"] span');
+  const typedName = elements.outputNameInput.value.trim();
+  if (typedName) {
+    if (outputZone) outputZone.textContent = typedName;
+    return;
+  }
+
+  if (!state.xlsFile) return;
+  const version = elements.versionInput.value.trim().replace(/[\\/:*?"<>|]+/g, "_");
+  const suggested = version ? `${baseName(state.xlsFile.name)}_${version}_converted` : `${baseName(state.xlsFile.name)}_converted`;
+  if (outputZone) outputZone.textContent = `${suggested}.xlsx`;
+}
+
+function wireDropZones() {
+  document.querySelectorAll(".drop-zone").forEach((zone) => {
+    const targetId = zone.dataset.target;
+    const input = document.getElementById(targetId);
+    const button = zone.querySelector("button");
+
+    if (button && input) {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        input.click();
+      });
+    }
+
+    if (input?.type === "file") {
+      input.addEventListener("change", () => setFile(targetId, input.files[0]));
+    }
+
+    zone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      zone.classList.add("is-over");
+    });
+
+    zone.addEventListener("dragleave", () => zone.classList.remove("is-over"));
+
+    zone.addEventListener("drop", (event) => {
+      event.preventDefault();
+      zone.classList.remove("is-over");
+      setFile(targetId, event.dataTransfer.files[0]);
+    });
+  });
+}
+
+function readFileAsArrayBuffer(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(file);
+  });
+}
+
+async function readWorkbook(file) {
+  const buffer = await readFileAsArrayBuffer(file);
+  return XLSX.read(buffer, { type: "array", cellDates: true, cellNF: true });
+}
+
+function sheetRange(sheet) {
+  if (!sheet["!ref"]) throw new Error("Workbook sheet is empty.");
+  return XLSX.utils.decode_range(sheet["!ref"]);
+}
+
+function readRow(sheet, rowIndex, lastColumnIndex) {
+  const row = [];
+  for (let columnIndex = 0; columnIndex <= lastColumnIndex; columnIndex += 1) {
+    const address = XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex });
+    row.push(sheet[address]?.v ?? "");
+  }
+  return row;
+}
+
+function findHeaderRow(sheet, requiredHeaders) {
+  const range = sheetRange(sheet);
+  const rowIndex = HEADER_ROW_NUMBER - 1;
+  const row = readRow(sheet, rowIndex, Math.max(range.e.c, 20));
+  const normalisedRow = row.map(normalise);
+  const hasAllHeaders = requiredHeaders.every((header) => normalisedRow.includes(normalise(header)));
+
+  if (!hasAllHeaders) {
+    throw new Error(`Header row ${HEADER_ROW_NUMBER} must contain required columns: ${requiredHeaders.join(", ")}.`);
+  }
+
+  const indexes = {};
+  row.forEach((header, columnIndex) => {
+    const key = normalise(header);
+    if (key && indexes[key] === undefined) indexes[key] = columnIndex;
+  });
+
+  return { rowIndex, indexes, range };
+}
+
+function getCellValue(row, indexes, header) {
+  return row[indexes[normalise(header)]] ?? "";
+}
+
+function setSheetCell(sheet, rowIndex, columnNumber, value, previousCell) {
+  const address = cellAddress(rowIndex, columnNumber);
+  const newCell = { t: "s", v: String(value) };
+  if (previousCell?.z) newCell.z = previousCell.z;
+  sheet[address] = { ...(previousCell || {}), ...newCell };
+}
+
+function extractRows(workbook, headers) {
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const header = findHeaderRow(sheet, headers);
+  const rows = [];
+
+  for (let rowIndex = DATA_START_ROW_NUMBER - 1; rowIndex <= header.range.e.r; rowIndex += 1) {
+    const row = readRow(sheet, rowIndex, Math.max(header.range.e.c, 20));
+    const hasData = row.some((value) => String(value ?? "").trim() !== "");
+    if (!hasData) continue;
+
+    rows.push({
+      rowIndex,
+      row,
+      dsp: getCellValue(row, header.indexes, "DSP"),
+      description: getCellValue(row, header.indexes, "Description"),
+      parameters: getCellValue(row, header.indexes, "Parameters"),
+      mappedXml: getCellValue(row, header.indexes, "Mapped to DAP XML")
+    });
+  }
+
+  return { sheet, header, rows };
+}
+
+function buildTargetRowIndex(targetRows) {
+  const index = new Map();
+  targetRows.forEach((item) => {
+    const key = rowKey(item.dsp, item.description, item.parameters);
+    if (!index.has(key)) index.set(key, item);
+  });
+  return index;
+}
+
+function rowKey(dsp, description, parameters) {
+  return [dsp, description, parameters].map(normalise).join("|");
+}
+
+function nodePath(element) {
+  const names = [];
+  let current = element;
+  while (current && current.nodeType === Node.ELEMENT_NODE) {
+    names.unshift(current.localName || current.nodeName);
+    current = current.parentElement;
+  }
+  return names.join("/");
+}
+
+function directText(element) {
+  const textNodes = Array.from(element.childNodes).filter((node) => node.nodeType === Node.TEXT_NODE);
+  return textNodes.map((node) => node.nodeValue.trim()).filter(Boolean).join(" ").trim();
+}
+
+function preferredElementValue(element, matchedAttributeName = "") {
+  const valueAttributes = ["value", "val", "hex", "gain", "data", "default"];
+  for (const name of valueAttributes) {
+    if (element.hasAttribute(name)) return element.getAttribute(name);
+  }
+  if (matchedAttributeName) return element.getAttribute(matchedAttributeName);
+  return directText(element) || element.textContent.trim();
+}
+
+function elementContext(element) {
+  const pieces = [];
+  let current = element;
+  while (current && current.nodeType === Node.ELEMENT_NODE) {
+    pieces.push(current.outerHTML.slice(0, 1200));
+    current = current.parentElement;
+  }
+  return normalise(pieces.join(" "));
+}
+
+function buildXmlCandidates(xmlDocument) {
+  const candidates = [];
+  const elements = Array.from(xmlDocument.getElementsByTagName("*"));
+
+  elements.forEach((element) => {
+    const attributes = Array.from(element.attributes || []);
+    const path = nodePath(element);
+    const tagName = element.localName || element.nodeName;
+
+    candidates.push({
+      key: normalise(tagName),
+      rawKey: tagName,
+      value: preferredElementValue(element),
+      path,
+      context: elementContext(element)
+    });
+
+    candidates.push({
+      key: normalise(path),
+      rawKey: path,
+      value: preferredElementValue(element),
+      path,
+      context: elementContext(element)
+    });
+
+    attributes.forEach((attribute) => {
+      candidates.push({
+        key: normalise(attribute.value),
+        rawKey: attribute.value,
+        value: preferredElementValue(element, attribute.name),
+        path,
+        context: elementContext(element)
+      });
+
+      candidates.push({
+        key: normalise(attribute.name),
+        rawKey: attribute.name,
+        value: attribute.value,
+        path,
+        context: elementContext(element)
+      });
+    });
+  });
+
+  return candidates.filter((candidate) => String(candidate.value ?? "").trim() !== "");
+}
+
+function findXmlValue(candidates, mapRow) {
+  const mappedKey = normalise(mapRow.mappedXml);
+  const filters = [mapRow.dsp, mapRow.description]
+    .filter(isRelevant)
+    .map(normalise)
+    .filter(Boolean);
+
+  const matching = candidates
+    .filter((candidate) => candidate.key === mappedKey || candidate.key.endsWith(mappedKey))
+    .map((candidate) => {
+      const score = filters.reduce((total, filter) => total + (candidate.context.includes(filter) ? 1 : 0), 0);
+      return { ...candidate, score };
+    })
+    .filter((candidate) => filters.length === 0 || candidate.score === filters.length)
+    .sort((a, b) => b.score - a.score || a.path.length - b.path.length);
+
+  return matching[0] || null;
+}
+
+function formatForTarget(previousValue, xmlValue) {
+  const raw = String(xmlValue ?? "").trim();
+  const previous = String(previousValue ?? "").trim();
+  if (!/^-?\d+$/.test(raw)) return raw;
+
+  const decimal = Number(raw);
+  if (!Number.isSafeInteger(decimal)) return raw;
+
+  if (/^0x[0-9a-f]+$/i.test(previous)) {
+    const width = Math.max(previous.length - 2, 2);
+    return `0x${decimal.toString(16).toUpperCase().padStart(width, "0")}`;
+  }
+
+  if (/^[0-9a-f]+$/i.test(previous) && /[a-f]/i.test(previous)) {
+    return decimal.toString(16).toUpperCase().padStart(previous.length, "0");
+  }
+
+  return raw;
+}
+
+function csvEscape(value) {
+  const text = String(value ?? "");
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function buildLog(records, version) {
+  const lines = [
+    `XML-XLS converter version,${csvEscape(version)}`,
+    `Generated,${csvEscape(new Date().toISOString())}`,
+    `Header row,${HEADER_ROW_NUMBER}`,
+    `Data start row,${DATA_START_ROW_NUMBER}`,
+    "",
+    OUTPUT_HEADERS.map(csvEscape).join(",")
+  ];
+
+  records.forEach((record) => {
+    lines.push([
+      record.dsp,
+      record.description,
+      record.parameters,
+      record.column,
+      record.previousValue,
+      record.newValue,
+      record.mappedXml
+    ].map(csvEscape).join(","));
+  });
+
+  return lines.join("\r\n");
+}
+
+function baseName(fileName) {
+  return String(fileName || "converted").replace(/\.[^.]+$/, "");
+}
+
+function buildOutputNames(version) {
+  const cleanedVersion = version.replace(/[\\/:*?"<>|]+/g, "_");
+  const typedName = elements.outputNameInput.value.trim();
+  const outputBase = typedName || `${baseName(state.xlsFile.name)}_${cleanedVersion}_converted`;
+  return {
+    workbookName: /\.xls[xm]?$/i.test(outputBase) ? outputBase : `${outputBase}.xlsx`,
+    logName: `${outputBase}_log.csv`
+  };
+}
+
+async function convert() {
+  try {
+    elements.convertButton.disabled = true;
+    elements.downloadXlsButton.disabled = true;
+    elements.downloadLogButton.disabled = true;
+    setStatus("Converting files...", "", false);
+
+    const version = elements.versionInput.value.trim();
+    if (!version) throw new Error("Version number must not be empty.");
+    if (!state.xmlFile) throw new Error("XML file is required.");
+    if (!state.xlsFile) throw new Error("Input XLS file is required.");
+    if (!state.mapFile) throw new Error("MAP file is required.");
+    if (!window.XLSX) throw new Error("Spreadsheet library could not be loaded. Check the network connection and reload the page.");
+
+    const [xmlText, targetWorkbook, mapWorkbook] = await Promise.all([
+      readFileAsText(state.xmlFile),
+      readWorkbook(state.xlsFile),
+      readWorkbook(state.mapFile)
+    ]);
+
+    const xmlDocument = new DOMParser().parseFromString(xmlText, "application/xml");
+    if (xmlDocument.querySelector("parsererror")) throw new Error("XML file could not be parsed.");
+
+    const candidates = buildXmlCandidates(xmlDocument);
+    const mapData = extractRows(mapWorkbook, REQUIRED_MAP_HEADERS);
+    const targetData = extractRows(targetWorkbook, ["DSP", "Description", "Parameters"]);
+    const targetIndex = buildTargetRowIndex(targetData.rows);
+    const records = [];
+    const misses = [];
+
+    mapData.rows.filter((row) => isRelevant(row.mappedXml)).forEach((mapRow) => {
+      const targetRow = targetIndex.get(rowKey(mapRow.dsp, mapRow.description, mapRow.parameters));
+      const xmlMatch = findXmlValue(candidates, mapRow);
+
+      if (!targetRow || !xmlMatch) {
+        misses.push(`${mapRow.dsp} / ${mapRow.description} / ${mapRow.parameters} / ${mapRow.mappedXml}`);
+        return;
+      }
+
+      TARGET_COLUMNS.forEach((columnNumber) => {
+        const address = cellAddress(targetRow.rowIndex, columnNumber);
+        const previousCell = targetData.sheet[address];
+        const previousValue = previousCell?.v ?? "";
+        const newValue = formatForTarget(previousValue, xmlMatch.value);
+
+        if (String(previousValue) !== String(newValue)) {
+          setSheetCell(targetData.sheet, targetRow.rowIndex, columnNumber, newValue, previousCell);
+          records.push({
+            dsp: targetRow.dsp,
+            description: targetRow.description,
+            parameters: targetRow.parameters,
+            column: columnNumber,
+            previousValue,
+            newValue,
+            mappedXml: mapRow.mappedXml
+          });
+        }
+      });
+    });
+
+    state.workbook = targetWorkbook;
+    const names = buildOutputNames(version);
+    state.outputName = names.workbookName;
+    state.logName = names.logName;
+    state.logText = buildLog(records, version);
+
+    elements.logOutput.value = state.logText;
+    elements.logMeta.textContent = `${records.length} modified cells, ${misses.length} unmapped rows`;
+    elements.downloadXlsButton.disabled = false;
+    elements.downloadLogButton.disabled = false;
+
+    const summary = misses.length ? `${records.length} changes, ${misses.length} rows skipped` : `${records.length} changes`;
+    setStatus("Conversion complete.", summary, false);
+  } catch (error) {
+    setStatus(error.message, "", true);
+  } finally {
+    elements.convertButton.disabled = false;
+  }
+}
+
+function downloadWorkbook() {
+  if (!state.workbook) return;
+  const outputName = state.outputName || "converted.xlsx";
+  const bookType = /\.xls$/i.test(outputName) ? "xls" : "xlsx";
+  XLSX.writeFile(state.workbook, outputName, { bookType });
+}
+
+function downloadLog() {
+  if (!state.logText) return;
+  const blob = new Blob([state.logText], { type: "text/csv;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = state.logName || "conversion_log.csv";
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+wireDropZones();
+elements.uploadXmlButton.addEventListener("click", () => elements.xmlInput.click());
+elements.uploadMapButton.addEventListener("click", () => elements.mapInput.click());
+elements.convertButton.addEventListener("click", convert);
+elements.downloadXlsButton.addEventListener("click", downloadWorkbook);
+elements.downloadLogButton.addEventListener("click", downloadLog);
+elements.versionInput.addEventListener("input", () => {
+  updateOutputNameSuggestion();
+  setStatus("Waiting for files.", readinessSummary());
+});
+elements.outputNameInput.addEventListener("input", updateOutputNameSuggestion);

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>XML-XLS converter 1.0</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  </head>
+  <body>
+    <header class="app-title">
+      <div>
+        <p class="eyebrow">Dolby Audio Processing</p>
+        <h1>XML-XLS converter</h1>
+      </div>
+      <span class="version">Version 1.0</span>
+    </header>
+
+    <main class="workspace">
+      <section class="panel" aria-labelledby="inputs-title">
+        <div class="panel-heading">
+          <h2 id="inputs-title">Input</h2>
+          <p>Load the source files used to update TitanOS audio settings.</p>
+        </div>
+
+        <label class="field">
+          <span>Version number</span>
+          <input id="versionInput" type="text" autocomplete="off" placeholder="Example: V1.0" required>
+        </label>
+
+        <div class="drop-zone" data-target="xmlInput">
+          <input id="xmlInput" type="file" accept=".xml,text/xml">
+          <div>
+            <strong>XML file</strong>
+            <span>Dolby Tuning Tool export</span>
+          </div>
+          <button type="button">Browse</button>
+        </div>
+
+        <div class="drop-zone" data-target="xlsInput">
+          <input id="xlsInput" type="file" accept=".xls,.xlsx,.xlsm,.csv">
+          <div>
+            <strong>Input XLS file</strong>
+            <span>TitanOS audio settings workbook</span>
+          </div>
+          <button type="button">Browse</button>
+        </div>
+
+        <div class="drop-zone" data-target="mapInput">
+          <input id="mapInput" type="file" accept=".xls,.xlsx,.xlsm,.csv">
+          <div>
+            <strong>MAP file</strong>
+            <span>Links XML items to XLS rows</span>
+          </div>
+          <button type="button">Browse</button>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="outputs-title">
+        <div class="panel-heading">
+          <h2 id="outputs-title">Output</h2>
+          <p>Generate the updated XLS file and a modification log.</p>
+        </div>
+
+        <label class="field">
+          <span>Output XLS file name</span>
+          <input id="outputNameInput" type="text" autocomplete="off" placeholder="Auto-generated when empty">
+        </label>
+
+        <div class="drop-zone passive" data-target="outputNameInput">
+          <div>
+            <strong>Output XLS file</strong>
+            <span>Drop an existing filename reference, or type a new name above</span>
+          </div>
+        </div>
+
+        <div class="log-window">
+          <div>
+            <strong>LOG file</strong>
+            <span id="logMeta">No conversion yet</span>
+          </div>
+          <textarea id="logOutput" spellcheck="false" readonly></textarea>
+        </div>
+      </section>
+    </main>
+
+    <nav class="command-bar" aria-label="Converter actions">
+      <div class="command-group left">
+        <button id="uploadXmlButton" type="button">Upload input XML file</button>
+        <button id="uploadMapButton" type="button">Upload input MAP file</button>
+      </div>
+      <div class="command-group center">
+        <button id="convertButton" type="button">Convert</button>
+      </div>
+      <div class="command-group right">
+        <button id="downloadXlsButton" type="button" disabled>Download XLS file</button>
+        <button id="downloadLogButton" type="button" disabled>Download LOG file</button>
+      </div>
+    </nav>
+
+    <section class="status-bar" aria-live="polite">
+      <span id="statusText">Waiting for files.</span>
+      <span id="summaryText"></span>
+    </section>
+
+    <script src="app.js"></script>
+  </body>
+</html>
