@@ -1,6 +1,8 @@
 const TARGET_COLUMNS = [5, 8, 11, 14];
 const XLS_HEADER_ROW_CANDIDATES = [24, 25];
 const MAP_HEADER_SCAN_LIMIT = 100;
+const TARGET_XLS_SHEET_NAME = "AQ_Tbl";
+const TARGET_MAP_SHEET_NAME = "MAP";
 const REQUIRED_MAP_HEADERS = ["DSP", "Description", "Parameters", "Mapped to DAP XML"];
 const OUTPUT_HEADERS = ["DSP", "Description", "Parameters", "Column", "Previous Value", "New Value", "XML Mapping"];
 
@@ -49,11 +51,11 @@ function isRelevant(value) {
   return text !== "" && normalise(text) !== "notrelevant";
 }
 
-function setStatus(message, summary = "", isError = false) {
+function setStatus(message, summary = "", isError = false, debugDetails = "") {
   elements.statusText.textContent = message;
   elements.summaryText.textContent = summary;
   elements.bottomMonitor.classList.toggle("error", isError);
-  elements.errorText.textContent = isError ? message : "No errors.";
+  elements.errorText.textContent = debugDetails || (isError ? message : "No errors.");
 }
 
 function setProgress(value) {
@@ -165,6 +167,42 @@ function sheetRange(sheet) {
   return XLSX.utils.decode_range(sheet["!ref"]);
 }
 
+function sheetNames(workbook) {
+  return workbook.SheetNames || [];
+}
+
+function workbookSheetInfo(workbook) {
+  const metadata = workbook.Workbook?.Sheets || [];
+  return sheetNames(workbook).map((name, index) => ({
+    name,
+    hidden: Boolean(metadata[index]?.Hidden)
+  }));
+}
+
+function findSheetName(workbook, preferredName) {
+  const names = sheetNames(workbook);
+  const exact = names.find((name) => name === preferredName);
+  if (exact) return exact;
+
+  const normalisedPreferred = normalise(preferredName);
+  return names.find((name) => normalise(name) === normalisedPreferred) || "";
+}
+
+function getRequiredSheet(workbook, preferredName, label) {
+  const matchedName = findSheetName(workbook, preferredName);
+  if (!matchedName) {
+    throw new Error(`${label} worksheet "${preferredName}" was not found. Available worksheets: ${sheetNames(workbook).join(", ") || "none"}.`);
+  }
+
+  return { sheet: workbook.Sheets[matchedName], sheetName: matchedName };
+}
+
+function candidateSheetNames(workbook) {
+  const info = workbookSheetInfo(workbook);
+  const visibleNames = info.filter((item) => !item.hidden).map((item) => item.name);
+  return visibleNames.length ? visibleNames : sheetNames(workbook);
+}
+
 function readRow(sheet, rowIndex, lastColumnIndex) {
   const row = [];
   for (let columnIndex = 0; columnIndex <= lastColumnIndex; columnIndex += 1) {
@@ -228,6 +266,54 @@ function findHeaderRow(sheet, requiredHeaders, options = {}) {
   throw new Error(`${label} header row was not found in the first ${MAP_HEADER_SCAN_LIMIT} rows. Required columns: ${requiredHeaders.join(", ")}.`);
 }
 
+function findHeaderRowInWorkbook(workbook, headers, options = {}) {
+  const preferredSheetName = options.sheetName;
+  const label = options.label || "Workbook";
+
+  if (preferredSheetName) {
+    const matchedName = findSheetName(workbook, preferredSheetName);
+    if (matchedName) {
+      const selected = { sheet: workbook.Sheets[matchedName], sheetName: matchedName };
+      try {
+        const header = findHeaderRow(selected.sheet, headers, options);
+        return { ...selected, header, warning: matchedName === preferredSheetName ? "" : `Used worksheet "${matchedName}" as a name match for required worksheet "${preferredSheetName}".` };
+      } catch (error) {
+        if (!options.allowSheetFallback) {
+          throw new Error(`${label} worksheet "${selected.sheetName}": ${error.message}`);
+        }
+      }
+    } else if (!options.allowSheetFallback) {
+      getRequiredSheet(workbook, preferredSheetName, label);
+    }
+
+    if (options.allowSheetFallback) {
+      const tried = matchedName ? [matchedName] : [];
+      for (const sheetName of candidateSheetNames(workbook)) {
+        if (tried.includes(sheetName)) continue;
+        try {
+          const sheet = workbook.Sheets[sheetName];
+          const header = findHeaderRow(sheet, headers, options);
+          return {
+            sheet,
+            sheetName,
+            header,
+            warning: `Required worksheet "${preferredSheetName}" was not usable. Used worksheet "${sheetName}" because it contains the required headers.`
+          };
+        } catch (_) {
+          // Keep scanning candidate sheets.
+        }
+      }
+
+      throw new Error(`${label} worksheet "${preferredSheetName}" was not found with required headers. Available worksheets: ${sheetNames(workbook).join(", ") || "none"}.`);
+    }
+  }
+
+  const firstSheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[firstSheetName];
+  const header = findHeaderRow(sheet, headers, options);
+  return { sheet, sheetName: firstSheetName, header };
+}
+
 function getCellValue(row, indexes, header) {
   return row[indexes[normalise(header)]] ?? "";
 }
@@ -240,8 +326,9 @@ function setSheetCell(sheet, rowIndex, columnNumber, value, previousCell) {
 }
 
 function extractRows(workbook, headers, options = {}) {
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  const header = findHeaderRow(sheet, headers, options);
+  const selected = findHeaderRowInWorkbook(workbook, headers, options);
+  const sheet = selected.sheet;
+  const header = selected.header;
   const rows = [];
   const dataStartRowIndex = header.rowIndex + 1;
 
@@ -260,7 +347,7 @@ function extractRows(workbook, headers, options = {}) {
     });
   }
 
-  return { sheet, header, rows };
+  return { sheet, sheetName: selected.sheetName, header, rows };
 }
 
 function buildTargetRowIndex(targetRows) {
@@ -405,8 +492,10 @@ function buildLog(records, version, metadata = {}) {
   const lines = [
     `XML-XLS converter version,${csvEscape(version)}`,
     `Generated,${csvEscape(new Date().toISOString())}`,
+    `XLS worksheet,${csvEscape(metadata.xlsSheetName || "")}`,
     `XLS header row,${metadata.xlsHeaderRow || ""}`,
     `XLS data start row,${metadata.xlsDataStartRow || ""}`,
+    `MAP worksheet,${csvEscape(metadata.mapSheetName || "")}`,
     `MAP header row,${metadata.mapHeaderRow || ""}`,
     "",
     OUTPUT_HEADERS.map(csvEscape).join(",")
@@ -468,9 +557,15 @@ async function convert() {
     setProgress(50);
 
     const candidates = buildXmlCandidates(xmlDocument);
-    const mapData = extractRows(mapWorkbook, REQUIRED_MAP_HEADERS, { label: "MAP file" });
+    const mapData = extractRows(mapWorkbook, REQUIRED_MAP_HEADERS, {
+      label: "MAP file",
+      sheetName: TARGET_MAP_SHEET_NAME,
+      allowSheetFallback: true
+    });
     const targetData = extractRows(targetWorkbook, ["DSP", "Description", "Parameters"], {
       label: "XLS file",
+      sheetName: TARGET_XLS_SHEET_NAME,
+      allowSheetFallback: true,
       fixedHeaderRowNumbers: XLS_HEADER_ROW_CANDIDATES
     });
     setProgress(65);
@@ -514,8 +609,10 @@ async function convert() {
     state.outputName = names.workbookName;
     state.logName = names.logName;
     state.logText = buildLog(records, version, {
+      xlsSheetName: targetData.sheetName,
       xlsHeaderRow: targetData.header.rowNumber,
       xlsDataStartRow: targetData.header.rowNumber + 1,
+      mapSheetName: mapData.sheetName,
       mapHeaderRow: mapData.header.rowNumber
     });
 
@@ -525,7 +622,9 @@ async function convert() {
     setProgress(100);
 
     const summary = misses.length ? `${records.length} changes, ${misses.length} rows skipped` : `${records.length} changes`;
-    setStatus("Conversion complete.", summary, false);
+    const warnings = [targetData.warning, mapData.warning].filter(Boolean).join(" ");
+    const debugDetails = `XLS worksheet: ${targetData.sheetName}, header row: ${targetData.header.rowNumber}. MAP worksheet: ${mapData.sheetName}, header row: ${mapData.header.rowNumber}.${warnings ? ` ${warnings}` : ""}`;
+    setStatus("Conversion complete.", summary, false, debugDetails);
   } catch (error) {
     setProgress(0);
     setStatus(error.message, "", true);
