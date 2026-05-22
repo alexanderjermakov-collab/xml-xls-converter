@@ -1,4 +1,4 @@
-const APP_VERSION = "1.1d";
+const APP_VERSION = "1.1e";
 const RELEASE_DATE = "2026-05-22";
 const APPLICATION_NAME = "Sharp Titan TV. AQ. XML-XLS converter";
 const XLS_HEADER_ROW_NUMBER = 25;
@@ -588,7 +588,7 @@ function buildXmlCandidates(xmlDocument) {
 
 function findXmlValue(candidates, mapRow) {
   const mappedKey = normalise(mapRow.mappedXml);
-  const filters = [mapRow.dsp, mapRow.description]
+  const filters = [mapRow.dsp]
     .filter(isRelevant)
     .map(normalise)
     .filter(Boolean);
