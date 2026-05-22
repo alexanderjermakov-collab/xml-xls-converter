@@ -1,8 +1,9 @@
-const APP_VERSION = "1.1b";
+const APP_VERSION = "1.1c";
 const RELEASE_DATE = "2026-05-22";
 const APPLICATION_NAME = "Sharp Titan TV. AQ. XML-XLS converter";
 const XLS_HEADER_ROW_NUMBER = 25;
 const XLS_DATA_START_ROW_NUMBER = 26;
+const XLS_DATA_END_ROW_NUMBER = 4257;
 const MAP_HEADER_SCAN_LIMIT = 100;
 const TARGET_XLS_SHEET_NAME = "AQ_Tbl";
 const TARGET_MAP_SHEET_NAME = "MAP";
@@ -440,8 +441,9 @@ function extractRows(workbook, headers, options = {}) {
   const header = selected.header;
   const rows = [];
   const dataStartRowIndex = header.rowIndex + 1;
+  const dataEndRowIndex = options.dataEndRowNumber ? Math.min(options.dataEndRowNumber - 1, header.range.e.r) : header.range.e.r;
 
-  for (let rowIndex = dataStartRowIndex; rowIndex <= header.range.e.r; rowIndex += 1) {
+  for (let rowIndex = dataStartRowIndex; rowIndex <= dataEndRowIndex; rowIndex += 1) {
     const row = readRow(sheet, rowIndex, Math.max(header.range.e.c, 20));
     const hasData = row.some((value) => String(value ?? "").trim() !== "");
     if (!hasData) continue;
@@ -607,6 +609,7 @@ function buildLog(records, version, metadata = {}) {
     `XLS worksheet,${csvEscape(metadata.xlsSheetName || "")}`,
     `XLS header row,${metadata.xlsHeaderRow || ""}`,
     `XLS data start row,${metadata.xlsDataStartRow || ""}`,
+    `XLS data end row,${metadata.xlsDataEndRow || ""}`,
     `MAP worksheet,${csvEscape(metadata.mapSheetName || "")}`,
     `MAP header row,${metadata.mapHeaderRow || ""}`,
     "",
@@ -638,6 +641,7 @@ function buildLogWorkbook(records, version, metadata = {}) {
     ["XLS worksheet", metadata.xlsSheetName || ""],
     ["XLS header row", metadata.xlsHeaderRow || ""],
     ["XLS data start row", metadata.xlsDataStartRow || ""],
+    ["XLS data end row", metadata.xlsDataEndRow || ""],
     ["MAP worksheet", metadata.mapSheetName || ""],
     ["MAP header row", metadata.mapHeaderRow || ""],
     [],
@@ -750,7 +754,8 @@ async function convert() {
       label: "XLS file",
       sheetName: TARGET_XLS_SHEET_NAME,
       allowSheetFallback: true,
-      fixedHeaderRowNumber: XLS_HEADER_ROW_NUMBER
+      fixedHeaderRowNumber: XLS_HEADER_ROW_NUMBER,
+      dataEndRowNumber: XLS_DATA_END_ROW_NUMBER
     });
     const populateSheet = formattingWorkbook?.sheet(targetData.sheetName) || null;
     if (formattingWorkbook && !populateSheet) throw new Error(`Formatting workbook worksheet "${targetData.sheetName}" was not found.`);
@@ -810,6 +815,7 @@ async function convert() {
       xlsSheetName: targetData.sheetName,
       xlsHeaderRow: targetData.header.rowNumber,
       xlsDataStartRow: XLS_DATA_START_ROW_NUMBER,
+      xlsDataEndRow: XLS_DATA_END_ROW_NUMBER,
       mapSheetName: mapData.sheetName,
       mapHeaderRow: mapData.header.rowNumber
     };

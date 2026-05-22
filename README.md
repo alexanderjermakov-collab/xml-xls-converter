@@ -1,6 +1,6 @@
 # Sharp Titan TV. AQ. XML-XLS converter
 
-Version 1.1b web application for updating TitanOS XLS audio settings with values extracted from a Dolby Tuning Tool XML file.
+Version 1.1c web application for updating TitanOS XLS audio settings with values extracted from a Dolby Tuning Tool XML file.
 
 ## How to run
 
@@ -13,7 +13,7 @@ The page loads SheetJS from the official CDN to read and write `.xls`, `.xlsx`, 
 - Required inputs: Dolby XML file, input XLS workbook, MAP workbook, and a non-empty version number.
 - XLS data is read and updated in worksheet `AQ_Tbl`.
 - XLS column headers are read from Excel line 25.
-- XLS data rows are read from Excel line 26 onward.
+- XLS data rows are read from Excel row 26 through row 4257.
 - MAP data is read from worksheet `MAP`; its header row is detected automatically in the first 100 rows and must contain `DSP`, `Description`, `Parameters`, and `Mapped to DAP XML`.
 - The target XLS workbook line 25 must contain `DSP`, `Description`, and `Parameters`.
 - Rows with empty `Mapped to DAP XML` or `Not relevant` are skipped.
