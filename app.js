@@ -1,4 +1,4 @@
-const APP_VERSION = "1.1";
+const APP_VERSION = "1.1a";
 const RELEASE_DATE = "2026-05-22";
 const APPLICATION_NAME = "Sharp Titan TV. AQ. XML-XLS converter";
 const XLS_HEADER_ROW_NUMBER = 25;
@@ -707,7 +707,7 @@ function buildOutputNames(version, sourceFile = state.xlsFile) {
   const outputBase = typedName || `${baseName(sourceFile?.name || "AQ_settings")}_${cleanedVersion}_converted`;
   return {
     workbookName: /\.xlsm$/i.test(outputBase) ? outputBase : `${outputBase.replace(/\.xls$/i, "")}.xlsx`,
-    logName: `${outputBase.replace(/\.(xlsx|xlsm|xls)$/i, "")}_log.xlsx`
+    logName: `${outputBase.replace(/\.(xlsx|xlsm|xls)$/i, "")}_log.xls`
   };
 }
 
@@ -844,7 +844,7 @@ function downloadWorkbook() {
 
 function downloadLog() {
   if (!state.logWorkbook) return;
-  XLSX.writeFile(state.logWorkbook, state.logName || "conversion_log.xlsx", { bookType: "xlsx" });
+  XLSX.writeFile(state.logWorkbook, state.logName || "conversion_log.xls", { bookType: "xls" });
 }
 
 wireDropZones();
