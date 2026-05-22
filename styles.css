@@ -153,16 +153,52 @@ h2 {
 }
 
 .drop-zone strong,
-.log-window strong {
+.log-window strong,
+.manual-window strong {
   display: block;
   margin-bottom: 5px;
   font-size: 17px;
 }
 
 .drop-zone span,
-.log-window span {
+.log-window span,
+.manual-window span {
   color: var(--muted);
   font-size: 14px;
+}
+
+.model-selection {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.model-selection legend {
+  padding: 0 6px;
+  color: #344054;
+  font-weight: 700;
+}
+
+.model-selection label {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  color: var(--ink);
+  line-height: 1.35;
+}
+
+.model-selection input {
+  margin-top: 2px;
+}
+
+.same-setting {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
 }
 
 .drop-zone button,
@@ -189,13 +225,15 @@ h2 {
   display: none;
 }
 
-.log-window {
+.log-window,
+.manual-window {
   display: grid;
   gap: 12px;
   margin-bottom: 16px;
 }
 
-.log-window textarea {
+.log-window textarea,
+.manual-window textarea {
   width: 100%;
   min-height: 260px;
   resize: vertical;
@@ -205,6 +243,10 @@ h2 {
   color: #17202a;
   background: #fbfdff;
   line-height: 1.45;
+}
+
+.manual-window textarea {
+  min-height: 180px;
 }
 
 .command-bar {

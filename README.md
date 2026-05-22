@@ -1,6 +1,6 @@
 # Sharp Titan TV. AQ. XML-XLS converter
 
-Version 1.0g web application for updating TitanOS XLS audio settings with values extracted from a Dolby Tuning Tool XML file.
+Version 1.1 web application for updating TitanOS XLS audio settings with values extracted from a Dolby Tuning Tool XML file.
 
 ## How to run
 
@@ -17,9 +17,11 @@ The page loads SheetJS from the official CDN to read and write `.xls`, `.xlsx`, 
 - MAP data is read from worksheet `MAP`; its header row is detected automatically in the first 100 rows and must contain `DSP`, `Description`, `Parameters`, and `Mapped to DAP XML`.
 - The target XLS workbook line 25 must contain `DSP`, `Description`, and `Parameters`.
 - Rows with empty `Mapped to DAP XML` or `Not relevant` are skipped.
-- The converter updates GAIN columns 5, 8, 11, and 14 with the same XML-derived value.
-- The converter only changes values in the target GAIN cells and preserves existing workbook content and cell formatting as far as the browser spreadsheet writer supports it.
-- The log contains DSP, Description, Parameters, target column number, previous value, new value, and XML mapping for each modified cell.
+- The converter updates only the selected TV model GAIN columns: F, I, L, and/or O.
+- The converter applies the AQ settings version to cell `B2` in the output workbook.
+- The converted workbook is generated with a formatting-preserving XLSX writer. Legacy `.xls` files are not safely writable in the browser without formatting loss.
+- The log can be downloaded in XLSX format and contains DSP, Description, Parameters, TV model, GAIN column, previous value, new value, and XML mapping for each modified cell.
+- The UI includes TV model selection, an optional shared 32/40/43 setting, and manual copy/paste output.
 - The UI includes a bottom conversion progress indicator and a bottom application error, status, and debug message window.
 
 If the XML contains repeated item names, the converter requires all relevant names to match: the mapped XML item name, `DSP`, and `Description`. Empty cells and cells marked `Not relevant` are excluded from XML matching.

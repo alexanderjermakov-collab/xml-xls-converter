@@ -1,12 +1,41 @@
-const TARGET_COLUMNS = [5, 8, 11, 14];
+const APP_VERSION = "1.1";
+const RELEASE_DATE = "2026-05-22";
 const APPLICATION_NAME = "Sharp Titan TV. AQ. XML-XLS converter";
 const XLS_HEADER_ROW_NUMBER = 25;
 const XLS_DATA_START_ROW_NUMBER = 26;
 const MAP_HEADER_SCAN_LIMIT = 100;
 const TARGET_XLS_SHEET_NAME = "AQ_Tbl";
 const TARGET_MAP_SHEET_NAME = "MAP";
+const DEFAULT_FILE_NAMES = {
+  xml: "XML.xml",
+  map: "MAP.xls",
+  xls: "MAP.xls"
+};
 const REQUIRED_MAP_HEADERS = ["DSP", "Description", "Parameters", "Mapped to DAP XML"];
-const OUTPUT_HEADERS = ["DSP", "Description", "Parameters", "Column", "Previous Value", "New Value", "XML Mapping"];
+const OUTPUT_HEADERS = ["DSP", "Description", "Parameters", "TV Model", "Gain Column", "Previous Value", "New Value", "XML Mapping"];
+const TV_TARGETS = {
+  "24": {
+    label: "1T-C24JF2x55E(K)B",
+    modelColumn: 5,
+    gainColumn: 6
+  },
+  "32": {
+    label: "T-C32JF2x55E(K)B / 1T-C32JF3x55E(K)B / 2T-C32JF2x55E(K)B",
+    modelColumn: 8,
+    gainColumn: 9
+  },
+  "40": {
+    label: "2T-C40JF2x55KE(K)B / 2T-C40JF3x55KE(K)B",
+    modelColumn: 11,
+    gainColumn: 12
+  },
+  "43": {
+    label: "2T-C43JF2x55E(K)B",
+    modelColumn: 14,
+    gainColumn: 15
+  }
+};
+const LINKED_SIZE_TARGETS = ["32", "40", "43"];
 
 const state = {
   xmlFile: null,
@@ -14,6 +43,8 @@ const state = {
   mapFile: null,
   workbook: null,
   outputName: "",
+  outputBlob: null,
+  logWorkbook: null,
   logText: "",
   logName: ""
 };
@@ -24,10 +55,14 @@ const elements = {
   xlsInput: document.getElementById("xlsInput"),
   mapInput: document.getElementById("mapInput"),
   outputNameInput: document.getElementById("outputNameInput"),
+  sameAqSettingInput: document.getElementById("sameAqSettingInput"),
   convertButton: document.getElementById("convertButton"),
   downloadXlsButton: document.getElementById("downloadXlsButton"),
+  downloadLogButton: document.getElementById("downloadLogButton"),
   logOutput: document.getElementById("logOutput"),
   logMeta: document.getElementById("logMeta"),
+  manualOutput: document.getElementById("manualOutput"),
+  manualMeta: document.getElementById("manualMeta"),
   statusText: document.getElementById("statusText"),
   progressFill: document.getElementById("progressFill"),
   progressValue: document.getElementById("progressValue"),
@@ -46,6 +81,10 @@ function normalise(value) {
 
 function cellAddress(rowIndex, columnNumber) {
   return XLSX.utils.encode_cell({ r: rowIndex, c: columnNumber - 1 });
+}
+
+function columnLetter(columnNumber) {
+  return XLSX.utils.encode_col(columnNumber - 1);
 }
 
 function isRelevant(value) {
@@ -90,9 +129,34 @@ function readinessSummary() {
     state.xmlFile ? "XML" : null,
     state.xlsFile ? "XLS" : null,
     state.mapFile ? "MAP" : null,
-    elements.versionInput.value.trim() ? "version" : null
+    elements.versionInput.value.trim() ? "AQ version" : null,
+    selectedTargetKeys().length ? "TV model" : null
   ].filter(Boolean);
   return ready.length ? `${ready.join(", ")} ready` : "";
+}
+
+function selectedModelKeys() {
+  return Array.from(document.querySelectorAll('input[name="tvModel"]:checked')).map((input) => input.value);
+}
+
+function selectedTargetKeys() {
+  const selected = selectedModelKeys();
+  if (elements.sameAqSettingInput.checked && selected.some((key) => LINKED_SIZE_TARGETS.includes(key))) {
+    return [...LINKED_SIZE_TARGETS];
+  }
+  return selected;
+}
+
+function selectedTargets() {
+  return selectedTargetKeys().map((key) => TV_TARGETS[key]).filter(Boolean);
+}
+
+function updateSameAqOption() {
+  const selected = selectedModelKeys();
+  const canApplyLinked = selected.some((key) => LINKED_SIZE_TARGETS.includes(key));
+  elements.sameAqSettingInput.disabled = !canApplyLinked;
+  if (!canApplyLinked) elements.sameAqSettingInput.checked = false;
+  setStatus("Waiting for files.", readinessSummary());
 }
 
 function updateOutputNameSuggestion() {
@@ -162,6 +226,37 @@ function readFileAsText(file) {
 async function readWorkbook(file) {
   const buffer = await readFileAsArrayBuffer(file);
   return XLSX.read(buffer, { type: "array", cellDates: true, cellNF: true, cellStyles: true, bookVBA: true });
+}
+
+async function fetchDefaultFile(fileName, mimeType) {
+  try {
+    const response = await fetch(fileName);
+    if (!response.ok) throw new Error();
+    const blob = await response.blob();
+    return new File([blob], fileName, { type: mimeType });
+  } catch (_) {
+    throw new Error(`Default file "${fileName}" was not found or cannot be loaded by the browser. Please select the file manually.`);
+  }
+}
+
+async function resolveInputFiles() {
+  const xmlFile = state.xmlFile || await fetchDefaultFile(DEFAULT_FILE_NAMES.xml, "text/xml");
+  const xlsFile = state.xlsFile || await fetchDefaultFile(DEFAULT_FILE_NAMES.xls, "application/vnd.ms-excel");
+  const mapFile = state.mapFile || await fetchDefaultFile(DEFAULT_FILE_NAMES.map, "application/vnd.ms-excel");
+  return { xmlFile, xlsFile, mapFile };
+}
+
+async function readFormattingWorkbook(file) {
+  if (!window.XlsxPopulate) {
+    throw new Error("Formatting-preserving workbook writer could not be loaded. Check the network connection and reload the page.");
+  }
+
+  if (!/\.xlsm?x?$/i.test(file.name) || /\.xls$/i.test(file.name)) {
+    throw new Error("Formatting-preserving conversion requires an .xlsx or .xlsm input file. Legacy .xls files cannot be safely rewritten in the browser without formatting loss.");
+  }
+
+  const buffer = await readFileAsArrayBuffer(file);
+  return XlsxPopulate.fromDataAsync(buffer);
 }
 
 function sheetRange(sheet) {
@@ -338,6 +433,12 @@ function setSheetCell(sheet, rowIndex, columnNumber, value, previousCell) {
   sheet[address] = existingCell;
 }
 
+function setPopulateCell(sheet, rowIndex, columnNumber, value, previousCell) {
+  const textValue = String(value);
+  const shouldBeNumber = previousCell?.t === "n" && textValue.trim() !== "" && !Number.isNaN(Number(textValue));
+  sheet.cell(rowIndex + 1, columnNumber).value(shouldBeNumber ? Number(textValue) : textValue);
+}
+
 function extractRows(workbook, headers, options = {}) {
   const selected = findHeaderRowInWorkbook(workbook, headers, options);
   const sheet = selected.sheet;
@@ -504,7 +605,9 @@ function csvEscape(value) {
 function buildLog(records, version, metadata = {}) {
   const lines = [
     `Application,${csvEscape(APPLICATION_NAME)}`,
-    `Application version,${csvEscape(version)}`,
+    `Application version,${csvEscape(APP_VERSION)}`,
+    `AQ settings version,${csvEscape(version)}`,
+    `Released,${csvEscape(RELEASE_DATE)}`,
     `Generated,${csvEscape(new Date().toISOString())}`,
     `XLS worksheet,${csvEscape(metadata.xlsSheetName || "")}`,
     `XLS header row,${metadata.xlsHeaderRow || ""}`,
@@ -520,7 +623,8 @@ function buildLog(records, version, metadata = {}) {
       record.dsp,
       record.description,
       record.parameters,
-      record.column,
+      record.tvModel,
+      record.gainColumn,
       record.previousValue,
       record.newValue,
       record.mappedXml
@@ -530,17 +634,80 @@ function buildLog(records, version, metadata = {}) {
   return lines.join("\r\n");
 }
 
+function buildLogWorkbook(records, version, metadata = {}) {
+  const rows = [
+    ["Application", APPLICATION_NAME],
+    ["Application version", APP_VERSION],
+    ["AQ settings version", version],
+    ["Generated", new Date().toISOString()],
+    ["XLS worksheet", metadata.xlsSheetName || ""],
+    ["XLS header row", metadata.xlsHeaderRow || ""],
+    ["XLS data start row", metadata.xlsDataStartRow || ""],
+    ["MAP worksheet", metadata.mapSheetName || ""],
+    ["MAP header row", metadata.mapHeaderRow || ""],
+    [],
+    OUTPUT_HEADERS
+  ];
+
+  records.forEach((record) => {
+    rows.push([
+      record.dsp,
+      record.description,
+      record.parameters,
+      record.tvModel,
+      record.gainColumn,
+      record.previousValue,
+      record.newValue,
+      record.mappedXml
+    ]);
+  });
+
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.aoa_to_sheet(rows);
+  sheet["!cols"] = [
+    { wch: 28 },
+    { wch: 36 },
+    { wch: 32 },
+    { wch: 38 },
+    { wch: 12 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 28 }
+  ];
+  XLSX.utils.book_append_sheet(workbook, sheet, "LOG");
+  return workbook;
+}
+
+function buildManualOutput(records) {
+  const byRow = new Map();
+  records.forEach((record) => {
+    if (!byRow.has(record.rowIndex)) {
+      byRow.set(record.rowIndex, {
+        dsp: record.dsp,
+        description: record.description,
+        parameters: record.parameters,
+        values: []
+      });
+    }
+    byRow.get(record.rowIndex).values.push(record.newValue);
+  });
+
+  return Array.from(byRow.values())
+    .map((item) => item.values[0] ?? "")
+    .join("\n");
+}
+
 function baseName(fileName) {
   return String(fileName || "converted").replace(/\.[^.]+$/, "");
 }
 
-function buildOutputNames(version) {
+function buildOutputNames(version, sourceFile = state.xlsFile) {
   const cleanedVersion = version.replace(/[\\/:*?"<>|]+/g, "_");
   const typedName = elements.outputNameInput.value.trim();
-  const outputBase = typedName || `${baseName(state.xlsFile.name)}_${cleanedVersion}_converted`;
+  const outputBase = typedName || `${baseName(sourceFile?.name || "AQ_settings")}_${cleanedVersion}_converted`;
   return {
-    workbookName: /\.xls[xm]?$/i.test(outputBase) ? outputBase : `${outputBase}.xlsx`,
-    logName: `${outputBase}_log.csv`
+    workbookName: /\.xlsm$/i.test(outputBase) ? outputBase : `${outputBase.replace(/\.xls$/i, "")}.xlsx`,
+    logName: `${outputBase.replace(/\.(xlsx|xlsm|xls)$/i, "")}_log.xlsx`
   };
 }
 
@@ -548,21 +715,25 @@ async function convert() {
   try {
     elements.convertButton.disabled = true;
     elements.downloadXlsButton.disabled = true;
+    elements.downloadLogButton.disabled = true;
+    state.outputBlob = null;
+    state.logWorkbook = null;
     setProgress(0);
     setStatus("Converting files...", "", false);
 
-    const version = elements.versionInput.value.trim();
+    const version = elements.versionInput.value.trim() || "1.0";
+    const targets = selectedTargets();
     if (!version) throw new Error("Version number must not be empty.");
-    if (!state.xmlFile) throw new Error("XML file is required.");
-    if (!state.xlsFile) throw new Error("Input XLS file is required.");
-    if (!state.mapFile) throw new Error("MAP file is required.");
+    if (!targets.length) throw new Error("At least one TV model must be selected.");
     if (!window.XLSX) throw new Error("Spreadsheet library could not be loaded. Check the network connection and reload the page.");
+    const inputFiles = await resolveInputFiles();
     setProgress(10);
 
-    const [xmlText, targetWorkbook, mapWorkbook] = await Promise.all([
-      readFileAsText(state.xmlFile),
-      readWorkbook(state.xlsFile),
-      readWorkbook(state.mapFile)
+    const [xmlText, targetWorkbook, mapWorkbook, formattingWorkbook] = await Promise.all([
+      readFileAsText(inputFiles.xmlFile),
+      readWorkbook(inputFiles.xlsFile),
+      readWorkbook(inputFiles.mapFile),
+      readFormattingWorkbook(inputFiles.xlsFile)
     ]);
     setProgress(35);
 
@@ -582,6 +753,9 @@ async function convert() {
       allowSheetFallback: true,
       fixedHeaderRowNumber: XLS_HEADER_ROW_NUMBER
     });
+    const populateSheet = formattingWorkbook.sheet(targetData.sheetName);
+    if (!populateSheet) throw new Error(`Formatting workbook worksheet "${targetData.sheetName}" was not found.`);
+    populateSheet.cell("B2").value(version);
     setProgress(65);
     const targetIndex = buildTargetRowIndex(targetData.rows);
     const records = [];
@@ -596,7 +770,8 @@ async function convert() {
         return;
       }
 
-      TARGET_COLUMNS.forEach((columnNumber) => {
+      targets.forEach((target) => {
+        const columnNumber = target.gainColumn;
         const address = cellAddress(targetRow.rowIndex, columnNumber);
         const previousCell = targetData.sheet[address];
         const previousValue = previousCell?.v ?? "";
@@ -604,11 +779,14 @@ async function convert() {
 
         if (String(previousValue) !== String(newValue)) {
           setSheetCell(targetData.sheet, targetRow.rowIndex, columnNumber, newValue, previousCell);
+          setPopulateCell(populateSheet, targetRow.rowIndex, columnNumber, newValue, previousCell);
           records.push({
+            rowIndex: targetRow.rowIndex,
             dsp: targetRow.dsp,
             description: targetRow.description,
             parameters: targetRow.parameters,
-            column: columnNumber,
+            tvModel: target.label,
+            gainColumn: columnLetter(columnNumber),
             previousValue,
             newValue,
             mappedXml: mapRow.mappedXml
@@ -618,21 +796,28 @@ async function convert() {
     });
     setProgress(90);
 
+    const outputBlob = await formattingWorkbook.outputAsync({ type: "blob" });
     state.workbook = targetWorkbook;
-    const names = buildOutputNames(version);
+    state.outputBlob = outputBlob;
+    const names = buildOutputNames(version, inputFiles.xlsFile);
     state.outputName = names.workbookName;
-    state.logName = names.logName;
-    state.logText = buildLog(records, version, {
+    state.logName = names.logName.replace(/\.csv$/i, ".xlsx");
+    const logMetadata = {
       xlsSheetName: targetData.sheetName,
       xlsHeaderRow: targetData.header.rowNumber,
       xlsDataStartRow: XLS_DATA_START_ROW_NUMBER,
       mapSheetName: mapData.sheetName,
       mapHeaderRow: mapData.header.rowNumber
-    });
+    };
+    state.logText = buildLog(records, version, logMetadata);
+    state.logWorkbook = buildLogWorkbook(records, version, logMetadata);
 
     elements.logOutput.value = state.logText;
     elements.logMeta.textContent = `${records.length} modified cells, ${misses.length} unmapped rows`;
+    elements.manualOutput.value = buildManualOutput(records);
+    elements.manualMeta.textContent = `${records.length ? new Set(records.map((record) => record.rowIndex)).size : 0} gain values generated for manual copy/paste`;
     elements.downloadXlsButton.disabled = false;
+    elements.downloadLogButton.disabled = false;
     setProgress(100);
 
     const summary = misses.length ? `${records.length} changes, ${misses.length} rows skipped` : `${records.length} changes`;
@@ -648,27 +833,28 @@ async function convert() {
 }
 
 function downloadWorkbook() {
-  if (!state.workbook) return;
+  if (!state.outputBlob) return;
   const outputName = state.outputName || "converted.xlsx";
-  const bookType = /\.xls$/i.test(outputName) ? "xls" : "xlsx";
-  XLSX.writeFile(state.workbook, outputName, { bookType, cellStyles: true, bookVBA: true });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(state.outputBlob);
+  link.download = outputName;
+  link.click();
+  URL.revokeObjectURL(link.href);
 }
 
 function downloadLog() {
-  if (!state.logText) return;
-  const blob = new Blob([state.logText], { type: "text/csv;charset=utf-8" });
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = state.logName || "conversion_log.csv";
-  link.click();
-  URL.revokeObjectURL(link.href);
+  if (!state.logWorkbook) return;
+  XLSX.writeFile(state.logWorkbook, state.logName || "conversion_log.xlsx", { bookType: "xlsx" });
 }
 
 wireDropZones();
 elements.convertButton.addEventListener("click", convert);
 elements.downloadXlsButton.addEventListener("click", downloadWorkbook);
+elements.downloadLogButton.addEventListener("click", downloadLog);
 elements.versionInput.addEventListener("input", () => {
   updateOutputNameSuggestion();
   setStatus("Waiting for files.", readinessSummary());
 });
 elements.outputNameInput.addEventListener("input", updateOutputNameSuggestion);
+document.querySelectorAll('input[name="tvModel"]').forEach((input) => input.addEventListener("change", updateSameAqOption));
+elements.sameAqSettingInput.addEventListener("change", updateSameAqOption);
