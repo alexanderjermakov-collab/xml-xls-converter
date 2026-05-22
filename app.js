@@ -1,4 +1,4 @@
-const APP_VERSION = "1.1a";
+const APP_VERSION = "1.1b";
 const RELEASE_DATE = "2026-05-22";
 const APPLICATION_NAME = "Sharp Titan TV. AQ. XML-XLS converter";
 const XLS_HEADER_ROW_NUMBER = 25;
@@ -9,7 +9,7 @@ const TARGET_MAP_SHEET_NAME = "MAP";
 const DEFAULT_FILE_NAMES = {
   xml: "XML.xml",
   map: "MAP.xls",
-  xls: "MAP.xls"
+  xls: "XLS.xls"
 };
 const REQUIRED_MAP_HEADERS = ["DSP", "Description", "Parameters", "Mapped to DAP XML"];
 const OUTPUT_HEADERS = ["DSP", "Description", "Parameters", "TV Model", "Gain Column", "Previous Value", "New Value", "XML Mapping"];
@@ -247,13 +247,8 @@ async function resolveInputFiles() {
 }
 
 async function readFormattingWorkbook(file) {
-  if (!window.XlsxPopulate) {
-    throw new Error("Formatting-preserving workbook writer could not be loaded. Check the network connection and reload the page.");
-  }
-
-  if (!/\.xlsm?x?$/i.test(file.name) || /\.xls$/i.test(file.name)) {
-    throw new Error("Formatting-preserving conversion requires an .xlsx or .xlsm input file. Legacy .xls files cannot be safely rewritten in the browser without formatting loss.");
-  }
+  if (/\.xls$/i.test(file.name)) return null;
+  if (!window.XlsxPopulate) return null;
 
   const buffer = await readFileAsArrayBuffer(file);
   return XlsxPopulate.fromDataAsync(buffer);
@@ -705,8 +700,12 @@ function buildOutputNames(version, sourceFile = state.xlsFile) {
   const cleanedVersion = version.replace(/[\\/:*?"<>|]+/g, "_");
   const typedName = elements.outputNameInput.value.trim();
   const outputBase = typedName || `${baseName(sourceFile?.name || "AQ_settings")}_${cleanedVersion}_converted`;
+  const sourceIsLegacyXls = /\.xls$/i.test(sourceFile?.name || "");
+  const workbookName = /\.(xlsx|xlsm|xls)$/i.test(outputBase)
+    ? outputBase
+    : `${outputBase}${sourceIsLegacyXls ? ".xls" : ".xlsx"}`;
   return {
-    workbookName: /\.xlsm$/i.test(outputBase) ? outputBase : `${outputBase.replace(/\.xls$/i, "")}.xlsx`,
+    workbookName,
     logName: `${outputBase.replace(/\.(xlsx|xlsm|xls)$/i, "")}_log.xls`
   };
 }
@@ -753,9 +752,10 @@ async function convert() {
       allowSheetFallback: true,
       fixedHeaderRowNumber: XLS_HEADER_ROW_NUMBER
     });
-    const populateSheet = formattingWorkbook.sheet(targetData.sheetName);
-    if (!populateSheet) throw new Error(`Formatting workbook worksheet "${targetData.sheetName}" was not found.`);
-    populateSheet.cell("B2").value(version);
+    const populateSheet = formattingWorkbook?.sheet(targetData.sheetName) || null;
+    if (formattingWorkbook && !populateSheet) throw new Error(`Formatting workbook worksheet "${targetData.sheetName}" was not found.`);
+    setSheetCell(targetData.sheet, 1, 2, version, targetData.sheet.B2);
+    if (populateSheet) populateSheet.cell("B2").value(version);
     setProgress(65);
     const targetIndex = buildTargetRowIndex(targetData.rows);
     const records = [];
@@ -779,7 +779,7 @@ async function convert() {
 
         if (String(previousValue) !== String(newValue)) {
           setSheetCell(targetData.sheet, targetRow.rowIndex, columnNumber, newValue, previousCell);
-          setPopulateCell(populateSheet, targetRow.rowIndex, columnNumber, newValue, previousCell);
+          if (populateSheet) setPopulateCell(populateSheet, targetRow.rowIndex, columnNumber, newValue, previousCell);
           records.push({
             rowIndex: targetRow.rowIndex,
             dsp: targetRow.dsp,
@@ -796,7 +796,11 @@ async function convert() {
     });
     setProgress(90);
 
-    const outputBlob = await formattingWorkbook.outputAsync({ type: "blob" });
+    const outputBlob = populateSheet
+      ? await formattingWorkbook.outputAsync({ type: "blob" })
+      : new Blob([XLSX.write(targetWorkbook, { type: "array", bookType: /\.xls$/i.test(inputFiles.xlsFile.name) ? "xls" : "xlsx", cellStyles: true, bookVBA: true })], {
+          type: /\.xls$/i.test(inputFiles.xlsFile.name) ? "application/vnd.ms-excel" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        });
     state.workbook = targetWorkbook;
     state.outputBlob = outputBlob;
     const names = buildOutputNames(version, inputFiles.xlsFile);
@@ -822,7 +826,8 @@ async function convert() {
 
     const summary = misses.length ? `${records.length} changes, ${misses.length} rows skipped` : `${records.length} changes`;
     const warnings = [targetData.warning, mapData.warning].filter(Boolean).join(" ");
-    const debugDetails = `XLS worksheet: ${targetData.sheetName}, header row: ${targetData.header.rowNumber}. MAP worksheet: ${mapData.sheetName}, header row: ${mapData.header.rowNumber}.${warnings ? ` ${warnings}` : ""}`;
+    const formatMode = populateSheet ? "Formatting-preserving output mode." : "Fallback output mode: formatting may be simplified.";
+    const debugDetails = `XLS worksheet: ${targetData.sheetName}, header row: ${targetData.header.rowNumber}. MAP worksheet: ${mapData.sheetName}, header row: ${mapData.header.rowNumber}. ${formatMode}${warnings ? ` ${warnings}` : ""}`;
     setStatus("Conversion complete.", summary, false, debugDetails);
   } catch (error) {
     setProgress(0);
