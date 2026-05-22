@@ -1,4 +1,4 @@
-const APP_VERSION = "1.1c";
+const APP_VERSION = "1.1d";
 const RELEASE_DATE = "2026-05-22";
 const APPLICATION_NAME = "Sharp Titan TV. AQ. XML-XLS converter";
 const XLS_HEADER_ROW_NUMBER = 25;
@@ -14,6 +14,14 @@ const DEFAULT_FILE_NAMES = {
 };
 const REQUIRED_MAP_HEADERS = ["DSP", "Description", "Parameters", "Mapped to DAP XML"];
 const OUTPUT_HEADERS = ["DSP", "Description", "Parameters", "TV Model", "Gain Column", "Previous Value", "New Value", "XML Mapping"];
+const SKIPPED_HEADERS = ["DSP", "Description", "Parameters", "Mapped to DAP XML", "Reason"];
+const DSP_PROFILE_ALIASES = {
+  movie: "Entertainment Custom mode",
+  music: "Music Custom mode",
+  voice: "Dialog Custom mode",
+  userselectable: "Personal Custom mode"
+};
+const UNUSED_XML_PROFILES = new Set(["game", "night"]);
 const TV_TARGETS = {
   "24": {
     label: "1T-C24JF2x55E(K)B",
@@ -474,6 +482,11 @@ function rowKey(dsp, description, parameters) {
   return [dsp, description, parameters].map(normalise).join("|");
 }
 
+function xmlProfileToMapDsp(value) {
+  const key = normalise(value);
+  return DSP_PROFILE_ALIASES[key] || value;
+}
+
 function nodePath(element) {
   const names = [];
   let current = element;
@@ -508,6 +521,24 @@ function elementContext(element) {
   return normalise(pieces.join(" "));
 }
 
+function elementAliasContext(element) {
+  const pieces = [];
+  let current = element;
+  while (current && current.nodeType === Node.ELEMENT_NODE) {
+    pieces.push(current.outerHTML.slice(0, 1200));
+    current = current.parentElement;
+  }
+
+  const source = pieces.join(" ");
+  const normalisedSource = normalise(source);
+  const aliases = [];
+  Object.entries(DSP_PROFILE_ALIASES).forEach(([xmlName, mapName]) => {
+    if (normalisedSource.includes(xmlName)) aliases.push(mapName);
+  });
+
+  return normalise(`${source} ${aliases.join(" ")}`);
+}
+
 function buildXmlCandidates(xmlDocument) {
   const candidates = [];
   const elements = Array.from(xmlDocument.getElementsByTagName("*"));
@@ -522,7 +553,7 @@ function buildXmlCandidates(xmlDocument) {
       rawKey: tagName,
       value: preferredElementValue(element),
       path,
-      context: elementContext(element)
+      context: elementAliasContext(element)
     });
 
     candidates.push({
@@ -530,7 +561,7 @@ function buildXmlCandidates(xmlDocument) {
       rawKey: path,
       value: preferredElementValue(element),
       path,
-      context: elementContext(element)
+      context: elementAliasContext(element)
     });
 
     attributes.forEach((attribute) => {
@@ -539,7 +570,7 @@ function buildXmlCandidates(xmlDocument) {
         rawKey: attribute.value,
         value: preferredElementValue(element, attribute.name),
         path,
-        context: elementContext(element)
+        context: elementAliasContext(element)
       });
 
       candidates.push({
@@ -547,7 +578,7 @@ function buildXmlCandidates(xmlDocument) {
         rawKey: attribute.name,
         value: attribute.value,
         path,
-        context: elementContext(element)
+        context: elementAliasContext(element)
       });
     });
   });
@@ -572,6 +603,13 @@ function findXmlValue(candidates, mapRow) {
     .sort((a, b) => b.score - a.score || a.path.length - b.path.length);
 
   return matching[0] || null;
+}
+
+function classifySkipReason(targetRow, xmlMatch, mapRow) {
+  if (!targetRow && !xmlMatch) return "XLS row not found and XML item/context not found";
+  if (!targetRow) return "XLS row not found";
+  if (!xmlMatch) return "XML item/context not found";
+  return `Skipped: ${mapRow.mappedXml}`;
 }
 
 function formatForTarget(previousValue, xmlValue) {
@@ -599,7 +637,7 @@ function csvEscape(value) {
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-function buildLog(records, version, metadata = {}) {
+function buildLog(records, skippedRows, version, metadata = {}) {
   const lines = [
     `Application,${csvEscape(APPLICATION_NAME)}`,
     `Application version,${csvEscape(APP_VERSION)}`,
@@ -629,10 +667,23 @@ function buildLog(records, version, metadata = {}) {
     ].map(csvEscape).join(","));
   });
 
+  if (skippedRows.length) {
+    lines.push("", "Skipped rows", SKIPPED_HEADERS.map(csvEscape).join(","));
+    skippedRows.forEach((row) => {
+      lines.push([
+        row.dsp,
+        row.description,
+        row.parameters,
+        row.mappedXml,
+        row.reason
+      ].map(csvEscape).join(","));
+    });
+  }
+
   return lines.join("\r\n");
 }
 
-function buildLogWorkbook(records, version, metadata = {}) {
+function buildLogWorkbook(records, skippedRows, version, metadata = {}) {
   const rows = [
     ["Application", APPLICATION_NAME],
     ["Application version", APP_VERSION],
@@ -660,6 +711,19 @@ function buildLogWorkbook(records, version, metadata = {}) {
       record.mappedXml
     ]);
   });
+
+  if (skippedRows.length) {
+    rows.push([], ["Skipped rows"], SKIPPED_HEADERS);
+    skippedRows.forEach((row) => {
+      rows.push([
+        row.dsp,
+        row.description,
+        row.parameters,
+        row.mappedXml,
+        row.reason
+      ]);
+    });
+  }
 
   const workbook = XLSX.utils.book_new();
   const sheet = XLSX.utils.aoa_to_sheet(rows);
@@ -764,14 +828,20 @@ async function convert() {
     setProgress(65);
     const targetIndex = buildTargetRowIndex(targetData.rows);
     const records = [];
-    const misses = [];
+    const skippedRows = [];
 
     mapData.rows.filter((row) => isRelevant(row.mappedXml)).forEach((mapRow) => {
       const targetRow = targetIndex.get(rowKey(mapRow.dsp, mapRow.description, mapRow.parameters));
       const xmlMatch = findXmlValue(candidates, mapRow);
 
       if (!targetRow || !xmlMatch) {
-        misses.push(`${mapRow.dsp} / ${mapRow.description} / ${mapRow.parameters} / ${mapRow.mappedXml}`);
+        skippedRows.push({
+          dsp: mapRow.dsp,
+          description: mapRow.description,
+          parameters: mapRow.parameters,
+          mappedXml: mapRow.mappedXml,
+          reason: classifySkipReason(targetRow, xmlMatch, mapRow)
+        });
         return;
       }
 
@@ -819,18 +889,18 @@ async function convert() {
       mapSheetName: mapData.sheetName,
       mapHeaderRow: mapData.header.rowNumber
     };
-    state.logText = buildLog(records, version, logMetadata);
-    state.logWorkbook = buildLogWorkbook(records, version, logMetadata);
+    state.logText = buildLog(records, skippedRows, version, logMetadata);
+    state.logWorkbook = buildLogWorkbook(records, skippedRows, version, logMetadata);
 
     elements.logOutput.value = state.logText;
-    elements.logMeta.textContent = `${records.length} modified cells, ${misses.length} unmapped rows`;
+    elements.logMeta.textContent = `${records.length} modified cells, ${skippedRows.length} skipped rows`;
     elements.manualOutput.value = buildManualOutput(records);
     elements.manualMeta.textContent = `${records.length ? new Set(records.map((record) => record.rowIndex)).size : 0} gain values generated for manual copy/paste`;
     elements.downloadXlsButton.disabled = false;
     elements.downloadLogButton.disabled = false;
     setProgress(100);
 
-    const summary = misses.length ? `${records.length} changes, ${misses.length} rows skipped` : `${records.length} changes`;
+    const summary = skippedRows.length ? `${records.length} changes, ${skippedRows.length} rows skipped` : `${records.length} changes`;
     const warnings = [targetData.warning, mapData.warning].filter(Boolean).join(" ");
     const formatMode = populateSheet ? "Formatting-preserving output mode." : "Fallback output mode: formatting may be simplified.";
     const debugDetails = `XLS worksheet: ${targetData.sheetName}, header row: ${targetData.header.rowNumber}. MAP worksheet: ${mapData.sheetName}, header row: ${mapData.header.rowNumber}. ${formatMode}${warnings ? ` ${warnings}` : ""}`;
