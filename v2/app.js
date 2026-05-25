@@ -1,11 +1,15 @@
 (function () {
   const APP_NAME = 'Sharp Titan TV. AQ. XML-XLS converter';
-  const APP_VERSION = '2.2';
+  const APP_VERSION = '2.4';
   const RELEASE_DATE = '2026-05-25';
   const SUPPORTED_PROFILES = ['Movie', 'Music', 'Voice', 'User Selectable'];
   const EXCLUDED_PROFILES = ['Game', 'Night', 'Off'];
   const DEFAULT_OUTPUT_NAME = 'Titan TV. DAP AQ. XML-XLS converter. Output.xlsx';
   const LOG_OUTPUT_NAME = 'Titan TV. DAP AQ. XML-XLS converter. Output LOG.xlsx';
+  const EQ_CENTER_FREQUENCIES = [
+    47, 141, 234, 328, 469, 656, 844, 1031, 1313, 1688,
+    2250, 3000, 3750, 4688, 5813, 7125, 9000, 11250, 13875, 19688,
+  ];
 
   const state = {
     xmlFile: null,
@@ -49,6 +53,10 @@
       .toLowerCase();
   }
 
+  function comparableName(value) {
+    return normalizeName(value).replace(/[\s_\-./\\()[\]{}:;]+/g, '');
+  }
+
   function localName(element) {
     return (element.localName || element.nodeName || '').toLowerCase();
   }
@@ -69,6 +77,55 @@
       }
     }
     return String(element.textContent || '').trim();
+  }
+
+  function directText(element) {
+    return Array.from(element.childNodes || [])
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => String(node.nodeValue || '').trim())
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+  }
+
+  function nearestProfile(element) {
+    let current = element.parentElement;
+    while (current) {
+      if (localName(current) === 'profile') {
+        return current;
+      }
+      current = current.parentElement;
+    }
+    return null;
+  }
+
+  function parameterMatches(element, parameterName) {
+    const expected = comparableName(parameterName);
+    if (!expected) {
+      return false;
+    }
+
+    if (comparableName(localName(element)) === expected) {
+      return true;
+    }
+
+    const matchingAttributes = ['name', 'id', 'key', 'type', 'parameter', 'param'];
+    return matchingAttributes.some((name) => comparableName(element.getAttribute(name)) === expected);
+  }
+
+  function parameterValue(element) {
+    if (!element) {
+      return '';
+    }
+
+    const preferredAttributes = ['value', 'val', 'default', 'enabled', 'hex', 'gain', 'data'];
+    for (const name of preferredAttributes) {
+      const value = element.getAttribute(name);
+      if (value !== null && String(value).trim() !== '') {
+        return String(value).trim();
+      }
+    }
+    return directText(element) || readNodeValue(element);
   }
 
   function formatHex(value) {
@@ -99,6 +156,18 @@
     return parts;
   }
 
+  function bandNumber(parameters, suffix) {
+    const match = String(parameters || '').match(/^Band_(\d{2})_(Fc|Target)$/i);
+    if (!match || match[2].toLowerCase() !== suffix.toLowerCase()) {
+      return 0;
+    }
+    return Number(match[1]);
+  }
+
+  function isEqBandListRow(row) {
+    return /eq[_\s-]*nb[_\s-]*bands/i.test(row.parameters || '') && /bands?/i.test(row.xmlParameter || '');
+  }
+
   function findInternalSpeakerEndpoint(xmlDoc) {
     const endpoints = Array.from(xmlDoc.getElementsByTagName('*')).filter((node) => localName(node) === 'endpoint');
     const internal = endpoints.find((node) => normalizeName(attr(node, 'type')) === 'internal_speaker');
@@ -112,27 +181,37 @@
     const profileMap = new Map();
     const profiles = Array.from(endpoint.getElementsByTagName('*')).filter((node) => localName(node) === 'profile');
     profiles.forEach((node) => {
-      const name = attr(node, 'name') || attr(node, 'type');
-      if (SUPPORTED_PROFILES.includes(name) && !profileMap.has(name)) {
-        profileMap.set(name, node);
+      const profileType = attr(node, 'type');
+      const profileName = attr(node, 'name');
+      const supportedName = SUPPORTED_PROFILES.find((name) => {
+        const supported = comparableName(name);
+        return comparableName(profileType) === supported || comparableName(profileName) === supported;
+      });
+
+      if (supportedName && !profileMap.has(supportedName)) {
+        profileMap.set(supportedName, node);
       }
     });
     return profileMap;
   }
 
-  function findParameter(profileNode, parameterName) {
-    const normalized = normalizeName(parameterName);
-    if (!normalized) {
-      return null;
-    }
-    return Array.from(profileNode.getElementsByTagName('*')).find((node) => localName(node) === normalized) || null;
+  function findParameter(scopeNode, parameterName, options) {
+    const nodes = Array.from(scopeNode.getElementsByTagName('*'));
+    return nodes.find((node) => {
+      if (options && options.excludeProfileChildren && nearestProfile(node)) {
+        return false;
+      }
+      return parameterMatches(node, parameterName);
+    }) || null;
   }
 
-  function computeMappedRow(mapRow, profileMap, endpointNode, logRows, profileStats) {
+  function computeMappedRow(mapRow, profileMap, endpointNode, logRows, profileStats, activeEqParameter) {
     const profileName = mapRow.xmlProfile || '';
     const parameterName = mapRow.xmlParameter || '';
     const normalizedParameter = normalizeName(parameterName);
     const profileNode = profileMap.get(profileName);
+    const bandFc = bandNumber(mapRow.parameters, 'Fc');
+    const bandTarget = bandNumber(mapRow.parameters, 'Target');
     const result = {
       profile: profileName,
       xmlParameter: parameterName,
@@ -155,13 +234,53 @@
       return result;
     }
 
+    if (bandFc) {
+      const decValue = EQ_CENTER_FREQUENCIES[bandFc - 1];
+      if (decValue !== undefined) {
+        profileStats[profileName].mapped += 1;
+        result.xmlParameter = 'Fixed EQ center frequency';
+        result.xmlValueDec = String(decValue);
+        result.gainHex = formatHex(decValue);
+        result.status = 'Fixed EQ center frequency';
+        logRows.push([profileName, result.xmlParameter, result.parameters, result.xmlValueDec, result.gainHex, result.status]);
+        return result;
+      }
+    }
+
     if (!normalizedParameter || normalizedParameter === 'missing') {
+      if (bandTarget && activeEqParameter) {
+        const activeNode =
+          findParameter(profileNode, activeEqParameter) ||
+          findParameter(endpointNode, activeEqParameter, { excludeProfileChildren: true });
+        const activeList = parseNumericList(parameterValue(activeNode));
+        const targetValue = activeList ? activeList[bandTarget - 1] : '';
+
+        if (targetValue !== undefined && targetValue !== '') {
+          const hexValue = formatHex(targetValue);
+          profileStats[profileName].mapped += 1;
+          result.xmlParameter = activeEqParameter;
+          result.xmlValueDec = targetValue;
+          result.gainHex = hexValue;
+          result.status = 'EQ band target from XML list';
+          logRows.push([profileName, result.xmlParameter, result.parameters, targetValue, hexValue, result.status]);
+          return result;
+        }
+
+        profileStats[profileName].missing += 1;
+        result.xmlParameter = activeEqParameter;
+        result.status = 'EQ band target value not found';
+        logRows.push([profileName, result.xmlParameter, result.parameters, '', result.gainHex, result.status]);
+        return result;
+      }
+
       profileStats[profileName].defaulted += 1;
       logRows.push([profileName, parameterName, result.parameters, '', result.gainHex, result.status]);
       return result;
     }
 
-    const parameterNode = findParameter(profileNode, normalizedParameter) || findParameter(endpointNode, normalizedParameter);
+    const parameterNode =
+      findParameter(profileNode, normalizedParameter) ||
+      findParameter(endpointNode, normalizedParameter, { excludeProfileChildren: true });
     if (!parameterNode) {
       profileStats[profileName].missing += 1;
       result.status = 'XML parameter not found';
@@ -169,7 +288,7 @@
       return result;
     }
 
-    const rawValue = readNodeValue(parameterNode);
+    const rawValue = parameterValue(parameterNode);
     if (!rawValue) {
       profileStats[profileName].defaulted += 1;
       result.status = 'Container found; MAP default kept';
@@ -205,6 +324,20 @@
     result.status = 'Mapped from XML';
     logRows.push([profileName, parameterName, result.parameters, valueForHex, hexValue, result.status]);
     return result;
+  }
+
+  function mapRowsWithEqContext(profileMap, endpoint, logRows, profileStats) {
+    let activeEqParameter = '';
+
+    return window.MAP20_ROWS.map((row) => {
+      if (isEqBandListRow(row)) {
+        activeEqParameter = normalizeName(row.xmlParameter);
+      } else if (row.xmlParameter && !bandNumber(row.parameters, 'Fc') && !bandNumber(row.parameters, 'Target')) {
+        activeEqParameter = '';
+      }
+
+      return computeMappedRow(row, profileMap, endpoint, logRows, profileStats, activeEqParameter);
+    });
   }
 
   function buildOutputWorkbook(mappedRows, inputName, outputName) {
@@ -348,7 +481,7 @@
 
       const logRows = [];
       const profileStats = {};
-      const mappedRows = window.MAP20_ROWS.map((row) => computeMappedRow(row, profileMap, endpoint, logRows, profileStats));
+      const mappedRows = mapRowsWithEqContext(profileMap, endpoint, logRows, profileStats);
       setProgress(72);
 
       const totalMapped = Object.values(profileStats).reduce((sum, item) => sum + item.mapped, 0);
