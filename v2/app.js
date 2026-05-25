@@ -1,6 +1,6 @@
 (function () {
   const APP_NAME = 'Sharp Titan TV. AQ. XML-XLS converter';
-  const APP_VERSION = '2.1';
+  const APP_VERSION = '2.2';
   const RELEASE_DATE = '2026-05-25';
   const SUPPORTED_PROFILES = ['Movie', 'Music', 'Voice', 'User Selectable'];
   const EXCLUDED_PROFILES = ['Game', 'Night', 'Off'];
@@ -209,6 +209,16 @@
 
   function buildOutputWorkbook(mappedRows, inputName, outputName) {
     const now = new Date();
+    const instructionRows = [
+      ['User Instruction', 'Use the manual Copy&Paste operation by following steps:'],
+      ['Step 1', 'Select required Sound Mode in the column D named DSP.'],
+      ['Step 2', 'Select whole data from the column GAIN(HEX).'],
+      ['Step 3', 'Open AQ.XLS file.'],
+      ['Step 4', 'Filter corresponding sound mode in the AQ.xls file.'],
+      ['Step 5', 'Select required TV model in the column.'],
+      ['Step 6', 'Paste selected values to this column.'],
+      ['Step 7', 'Repeat steps 5-6 for other TV models, if required.'],
+    ];
     const aoa = [
       [APP_NAME],
       ['Version', APP_VERSION],
@@ -216,7 +226,8 @@
       ['Conversion date', now.toLocaleString()],
       ['Input XML file', inputName],
       ['Output XLSX file', outputName],
-      ['User instructions', 'Open this workbook and manually Copy/Paste the generated table data into the TitanOS AQ settings workbook.'],
+      [],
+      ...instructionRows,
       [],
       ['DAP Audio settings in XML file', '', '', 'DAP Audio settings in XLS file', '', '', ''],
       ['XML Profile name', 'XML parameter name', 'XML parameter value (DEC)', 'DSP', 'Description', 'Parameters', 'Gain (Hex)'],
@@ -246,8 +257,8 @@
     ];
     ws['!merges'] = [
       { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
-      { s: { r: 8, c: 0 }, e: { r: 8, c: 2 } },
-      { s: { r: 8, c: 3 }, e: { r: 8, c: 6 } },
+      { s: { r: 15, c: 0 }, e: { r: 15, c: 2 } },
+      { s: { r: 15, c: 3 }, e: { r: 15, c: 6 } },
     ];
 
     const wb = XLSX.utils.book_new();
