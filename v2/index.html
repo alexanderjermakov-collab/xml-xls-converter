@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sharp Titan TV. AQ. XML-XLS converter 2.0</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="title-window">
+        <div>
+          <p class="eyebrow">Online web application</p>
+          <h1>Sharp Titan TV. AQ. XML-XLS converter</h1>
+        </div>
+        <div class="version-badge">
+          <span>Version</span>
+          <strong>2.0</strong>
+          <small>Release 2026-05-25</small>
+        </div>
+      </header>
+
+      <section class="workspace" aria-label="Converter workspace">
+        <section class="panel input-panel" aria-labelledby="xml-title">
+          <div class="panel-heading">
+            <p class="eyebrow">Input</p>
+            <h2 id="xml-title">DAP XML file</h2>
+          </div>
+
+          <label class="drop-zone" id="xmlDropZone">
+            <input id="xmlInput" type="file" accept=".xml,text/xml,application/xml" />
+            <span class="drop-icon" aria-hidden="true">XML</span>
+            <span class="drop-title">Drop XML file here</span>
+            <span class="drop-note">or click to select the Dolby Tuning Tool XML export</span>
+          </label>
+
+          <dl class="file-details">
+            <div>
+              <dt>Selected file</dt>
+              <dd id="xmlFileName">No file selected</dd>
+            </div>
+            <div>
+              <dt>Internal map</dt>
+              <dd>MAP2.0.xlsx embedded, 656 rows</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="panel output-panel" aria-labelledby="xlsx-title">
+          <div class="panel-heading">
+            <p class="eyebrow">Output</p>
+            <h2 id="xlsx-title">XLSX file for Copy/Paste</h2>
+          </div>
+
+          <div class="output-card">
+            <span class="file-chip">XLSX</span>
+            <div>
+              <p id="outputFileName">Output file will be created after conversion</p>
+              <small>The table layout follows MAP2.0.xlsx and is ready for manual Copy/Paste.</small>
+            </div>
+          </div>
+
+          <div class="button-row">
+            <button id="downloadXlsxButton" class="secondary-button" type="button" disabled>
+              Download output XLSX
+            </button>
+          </div>
+
+          <div class="preview" aria-live="polite">
+            <table>
+              <thead>
+                <tr>
+                  <th>Profile</th>
+                  <th>Mapped</th>
+                  <th>Missing</th>
+                  <th>Default</th>
+                </tr>
+              </thead>
+              <tbody id="summaryBody">
+                <tr>
+                  <td colspan="4">Waiting for XML input</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="control-strip" aria-label="Conversion controls">
+        <button id="convertButton" class="primary-button" type="button" disabled>Convert</button>
+        <button id="downloadLogButton" class="secondary-button" type="button" disabled>Download LOG</button>
+        <div class="progress-wrap" aria-label="Conversion progress">
+          <div id="progressBar" class="progress-bar"></div>
+        </div>
+      </section>
+
+      <section class="status-window" aria-label="Status and debug information">
+        <div class="status-line">
+          <strong id="statusText">Select XML file to start.</strong>
+          <span id="debugText">Only the internal_speaker endpoint is used. Game, Night, Off and headphones data are excluded.</span>
+        </div>
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="./map-data.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -1,5 +1,17 @@
 # Sharp Titan TV. AQ. XML-XLS converter
 
+## Version 2.0
+
+Version 2.0 is published as a separate web application in `v2/`.
+
+- Uses the internal `MAP2.0.xlsx` project data embedded in the app.
+- Requires only the Dolby Tuning Tool XML input file.
+- Reads only the `internal_speaker` endpoint and supported profiles: Movie, Music, Voice, and User Selectable.
+- Creates a new XLSX workbook for manual Copy/Paste and a downloadable LOG workbook.
+- Keeps the Version 1.x application available at the repository root.
+
+## Version 1.x
+
 Version 1.1e web application for updating TitanOS XLS audio settings with values extracted from a Dolby Tuning Tool XML file.
 
 ## How to run
