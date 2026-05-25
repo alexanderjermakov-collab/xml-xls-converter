@@ -1,11 +1,11 @@
 (function () {
   const APP_NAME = 'Sharp Titan TV. AQ. XML-XLS converter';
-  const APP_VERSION = '2.0';
+  const APP_VERSION = '2.1';
   const RELEASE_DATE = '2026-05-25';
   const SUPPORTED_PROFILES = ['Movie', 'Music', 'Voice', 'User Selectable'];
   const EXCLUDED_PROFILES = ['Game', 'Night', 'Off'];
-  const DEFAULT_OUTPUT_NAME = 'DAP_XML_CopyPaste_v2.xlsx';
-  const LOG_OUTPUT_NAME = 'DAP_XML_CopyPaste_v2_LOG.xlsx';
+  const DEFAULT_OUTPUT_NAME = 'Titan TV. DAP AQ. XML-XLS converter. Output.xlsx';
+  const LOG_OUTPUT_NAME = 'Titan TV. DAP AQ. XML-XLS converter. Output LOG.xlsx';
 
   const state = {
     xmlFile: null,
@@ -299,9 +299,8 @@
     });
   }
 
-  function makeOutputName(inputName) {
-    const baseName = inputName.replace(/\.[^.]+$/, '') || 'DAP_XML';
-    return `${baseName}_CopyPaste_v2.xlsx`;
+  function makeOutputName() {
+    return DEFAULT_OUTPUT_NAME;
   }
 
   async function convert() {
@@ -352,8 +351,8 @@
         defaultRows: totalDefault,
       };
 
-      state.outputName = makeOutputName(state.xmlFile.name);
-      state.logName = state.outputName.replace(/\.xlsx$/i, '_LOG.xlsx');
+      state.outputName = makeOutputName();
+      state.logName = LOG_OUTPUT_NAME;
       state.outputWorkbook = buildOutputWorkbook(mappedRows, state.xmlFile.name, state.outputName);
       state.logWorkbook = buildLogWorkbook(logRows, summary);
 

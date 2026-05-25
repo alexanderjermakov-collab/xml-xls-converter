@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Sharp Titan TV. AQ. XML-XLS converter 2.0</title>
+    <title>Sharp Titan TV. AQ. XML-XLS converter 2.1</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -15,7 +15,7 @@
         </div>
         <div class="version-badge">
           <span>Version</span>
-          <strong>2.0</strong>
+          <strong>2.1</strong>
           <small>Release 2026-05-25</small>
         </div>
       </header>
@@ -60,12 +60,6 @@
             </div>
           </div>
 
-          <div class="button-row">
-            <button id="downloadXlsxButton" class="secondary-button" type="button" disabled>
-              Download output XLSX
-            </button>
-          </div>
-
           <div class="preview" aria-live="polite">
             <table>
               <thead>
@@ -89,6 +83,9 @@
       <section class="control-strip" aria-label="Conversion controls">
         <button id="convertButton" class="primary-button" type="button" disabled>Convert</button>
         <button id="downloadLogButton" class="secondary-button" type="button" disabled>Download LOG</button>
+        <button id="downloadXlsxButton" class="secondary-button output-download-button" type="button" disabled>
+          Download output XLSX file
+        </button>
         <div class="progress-wrap" aria-label="Conversion progress">
           <div id="progressBar" class="progress-bar"></div>
         </div>

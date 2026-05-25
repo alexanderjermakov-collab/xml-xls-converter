@@ -1,8 +1,8 @@
 # Sharp Titan TV. AQ. XML-XLS converter
 
-## Version 2.0
+## Version 2.x
 
-Version 2.0 is published as a separate web application in `v2/`.
+Version 2.1 is published as a separate web application in `v2/`.
 
 - Uses the internal `MAP2.0.xlsx` project data embedded in the app.
 - Requires only the Dolby Tuning Tool XML input file.

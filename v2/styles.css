@@ -212,12 +212,6 @@ small,
   overflow-wrap: anywhere;
 }
 
-.button-row {
-  display: flex;
-  justify-content: flex-end;
-  margin: 18px 0;
-}
-
 button {
   min-height: 44px;
   padding: 0 18px;
@@ -252,6 +246,7 @@ button:disabled {
 }
 
 .preview {
+  margin-top: 18px;
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -282,7 +277,7 @@ tr:last-child td {
 
 .control-strip {
   display: grid;
-  grid-template-columns: auto auto minmax(180px, 1fr);
+  grid-template-columns: auto auto auto minmax(180px, 1fr);
   gap: 14px;
   align-items: center;
   margin-top: 20px;
@@ -291,6 +286,10 @@ tr:last-child td {
   border: 1px solid var(--line);
   border-radius: 8px;
   box-shadow: var(--shadow);
+}
+
+.output-download-button {
+  justify-self: end;
 }
 
 .progress-wrap {
