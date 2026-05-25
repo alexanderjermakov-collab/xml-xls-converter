@@ -2,7 +2,7 @@
 
 ## Version 2.x
 
-Version 2.4 is published as a separate web application in `v2/`.
+Version 2.5 is published as a separate web application in `v2/`.
 
 - Uses the internal `MAP2.0.xlsx` project data embedded in the app.
 - Requires only the Dolby Tuning Tool XML input file.
@@ -11,7 +11,7 @@ Version 2.4 is published as a separate web application in `v2/`.
 - Keeps the Version 1.x application available at the repository root.
 - Matches profile names from XML `type` or `name` attributes, and matches mapped XML parameters by tag name or common parameter attributes.
 - Endpoint-level parameter fallback is limited to values outside profile blocks, so one profile cannot accidentally reuse another profile's value.
-- Applies the Version 2.4 EQ rules from the `20260525d` task: fixed Band Fc values and Band Target values split from XML EQ band lists.
+- Applies the Version 2.5 EQ rules from the `20260525e` task: fixed Band Fc values and Band Target values split from XML EQ band lists.
 
 ## Version 1.x
 
@@ -33,6 +33,7 @@ The page loads SheetJS from the official CDN to read and write `.xls`, `.xlsx`, 
 - `Band_01_Fc` through `Band_20_Fc` use fixed DTT center-frequency values.
 - `Band_01_Target` through `Band_20_Target` use the matching item from `graphic-equalizer-bands` or `ieq-bands`.
 - Graphic EQ and Graphic EQ(Wallmount) both use `graphic-equalizer-bands`; Intelligent EQ uses `ieq-bands`.
+- Intelligent EQ band targets preserve the active `ieq-bands` list across the `IEQ_Amount` row and support negative DEC values.
 - Output workbook name: `Titan TV. DAP AQ. XML-XLS converter. Output.xlsx`.
 - Log workbook name: `Titan TV. DAP AQ. XML-XLS converter. Output LOG.xlsx`.
 - The UI includes XML drag and drop, a right-side output preview, Convert, Download LOG, Download output XLSX, bottom progress, and bottom status/debug messages.

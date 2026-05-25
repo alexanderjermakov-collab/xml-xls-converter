@@ -1,6 +1,6 @@
 (function () {
   const APP_NAME = 'Sharp Titan TV. AQ. XML-XLS converter';
-  const APP_VERSION = '2.4';
+  const APP_VERSION = '2.5';
   const RELEASE_DATE = '2026-05-25';
   const SUPPORTED_PROFILES = ['Movie', 'Music', 'Voice', 'User Selectable'];
   const EXCLUDED_PROFILES = ['Game', 'Night', 'Off'];
@@ -332,8 +332,6 @@
     return window.MAP20_ROWS.map((row) => {
       if (isEqBandListRow(row)) {
         activeEqParameter = normalizeName(row.xmlParameter);
-      } else if (row.xmlParameter && !bandNumber(row.parameters, 'Fc') && !bandNumber(row.parameters, 'Target')) {
-        activeEqParameter = '';
       }
 
       return computeMappedRow(row, profileMap, endpoint, logRows, profileStats, activeEqParameter);
