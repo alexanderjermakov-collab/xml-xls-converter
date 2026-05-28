@@ -1,7 +1,7 @@
 (function () {
   const APP_NAME = 'Sharp Titan TV. AQ. XML-XLS converter';
-  const APP_VERSION = '2.5';
-  const RELEASE_DATE = '2026-05-25';
+  const APP_VERSION = '2.6';
+  const RELEASE_DATE = '2026-05-28';
   const SUPPORTED_PROFILES = ['Movie', 'Music', 'Voice', 'User Selectable'];
   const EXCLUDED_PROFILES = ['Game', 'Night', 'Off'];
   const DEFAULT_OUTPUT_NAME = 'Titan TV. DAP AQ. XML-XLS converter. Output.xlsx';
@@ -145,6 +145,18 @@
     return number.toString(16).toUpperCase().padStart(8, '0');
   }
 
+  function hexToSignedDec(hexValue) {
+    const text = String(hexValue || '').trim();
+    if (!/^[0-9a-fA-F]{1,8}$/.test(text)) {
+      return '';
+    }
+    let number = parseInt(text, 16);
+    if (number > 0x7fffffff) {
+      number -= 0x100000000;
+    }
+    return String(number);
+  }
+
   function parseNumericList(value) {
     const parts = String(value || '')
       .split(/[,\s]+/)
@@ -166,6 +178,36 @@
 
   function isEqBandListRow(row) {
     return /eq[_\s-]*nb[_\s-]*bands/i.test(row.parameters || '') && /bands?/i.test(row.xmlParameter || '');
+  }
+
+  function fixedDecForParameter(row) {
+    const parameter = comparableName(row.parameters);
+
+    if (parameter === 'deamountmax') {
+      return '163';
+    }
+    if (parameter === 'deamountmin') {
+      return '0';
+    }
+    if (parameter === 'surroundboostmax') {
+      return '964';
+    }
+    if (parameter === 'surroundboostmin') {
+      return '0';
+    }
+    if (parameter === 'bassboostmax' || parameter === 'bassboostmin') {
+      return hexToSignedDec(row.gainHex);
+    }
+
+    return '';
+  }
+
+  function inferredXmlParameter(row) {
+    const parameter = comparableName(row.parameters);
+    if (parameter === 'speakerangle') {
+      return 'virtualizer-surround-speaker-angle';
+    }
+    return normalizeName(row.xmlParameter);
   }
 
   function findInternalSpeakerEndpoint(xmlDoc) {
@@ -208,18 +250,19 @@
   function computeMappedRow(mapRow, profileMap, endpointNode, logRows, profileStats, activeEqParameter) {
     const profileName = mapRow.xmlProfile || '';
     const parameterName = mapRow.xmlParameter || '';
-    const normalizedParameter = normalizeName(parameterName);
+    const normalizedParameter = inferredXmlParameter(mapRow);
     const profileNode = profileMap.get(profileName);
     const bandFc = bandNumber(mapRow.parameters, 'Fc');
     const bandTarget = bandNumber(mapRow.parameters, 'Target');
     const result = {
       profile: profileName,
-      xmlParameter: parameterName,
+      xmlParameter: parameterName || normalizedParameter,
       xmlValueDec: mapRow.xmlValueDec || '',
       dsp: mapRow.dsp || '',
       description: mapRow.description || '',
       parameters: mapRow.parameters || '',
       gainHex: mapRow.gainHex || '',
+      gainDec: hexToSignedDec(mapRow.gainHex),
       status: 'Default from MAP',
     };
 
@@ -230,7 +273,7 @@
     if (!profileNode) {
       profileStats[profileName].missing += 1;
       result.status = 'Profile not found';
-      logRows.push([profileName, parameterName, result.parameters, '', result.gainHex, result.status]);
+      logRows.push([profileName, parameterName, result.parameters, '', result.gainDec, result.gainHex, result.status]);
       return result;
     }
 
@@ -240,11 +283,23 @@
         profileStats[profileName].mapped += 1;
         result.xmlParameter = 'Fixed EQ center frequency';
         result.xmlValueDec = String(decValue);
+        result.gainDec = String(decValue);
         result.gainHex = formatHex(decValue);
         result.status = 'Fixed EQ center frequency';
-        logRows.push([profileName, result.xmlParameter, result.parameters, result.xmlValueDec, result.gainHex, result.status]);
+        logRows.push([profileName, result.xmlParameter, result.parameters, result.xmlValueDec, result.gainDec, result.gainHex, result.status]);
         return result;
       }
+    }
+
+    const fixedDecValue = fixedDecForParameter(mapRow);
+    if (fixedDecValue !== '') {
+      profileStats[profileName].mapped += 1;
+      result.xmlValueDec = fixedDecValue;
+      result.gainDec = fixedDecValue;
+      result.gainHex = formatHex(fixedDecValue);
+      result.status = 'Fixed min/max value';
+      logRows.push([profileName, parameterName, result.parameters, fixedDecValue, result.gainDec, result.gainHex, result.status]);
+      return result;
     }
 
     if (!normalizedParameter || normalizedParameter === 'missing') {
@@ -260,21 +315,22 @@
           profileStats[profileName].mapped += 1;
           result.xmlParameter = activeEqParameter;
           result.xmlValueDec = targetValue;
+          result.gainDec = targetValue;
           result.gainHex = hexValue;
           result.status = 'EQ band target from XML list';
-          logRows.push([profileName, result.xmlParameter, result.parameters, targetValue, hexValue, result.status]);
+          logRows.push([profileName, result.xmlParameter, result.parameters, targetValue, result.gainDec, hexValue, result.status]);
           return result;
         }
 
         profileStats[profileName].missing += 1;
         result.xmlParameter = activeEqParameter;
         result.status = 'EQ band target value not found';
-        logRows.push([profileName, result.xmlParameter, result.parameters, '', result.gainHex, result.status]);
+        logRows.push([profileName, result.xmlParameter, result.parameters, '', result.gainDec, result.gainHex, result.status]);
         return result;
       }
 
       profileStats[profileName].defaulted += 1;
-      logRows.push([profileName, parameterName, result.parameters, '', result.gainHex, result.status]);
+      logRows.push([profileName, parameterName, result.parameters, '', result.gainDec, result.gainHex, result.status]);
       return result;
     }
 
@@ -284,7 +340,7 @@
     if (!parameterNode) {
       profileStats[profileName].missing += 1;
       result.status = 'XML parameter not found';
-      logRows.push([profileName, parameterName, result.parameters, '', result.gainHex, result.status]);
+      logRows.push([profileName, parameterName, result.parameters, '', result.gainDec, result.gainHex, result.status]);
       return result;
     }
 
@@ -292,7 +348,7 @@
     if (!rawValue) {
       profileStats[profileName].defaulted += 1;
       result.status = 'Container found; MAP default kept';
-      logRows.push([profileName, parameterName, result.parameters, '', result.gainHex, result.status]);
+      logRows.push([profileName, parameterName, result.parameters, '', result.gainDec, result.gainHex, result.status]);
       return result;
     }
 
@@ -305,7 +361,7 @@
       profileStats[profileName].defaulted += 1;
       result.xmlValueDec = rawValue;
       result.status = 'List value found; MAP default kept';
-      logRows.push([profileName, parameterName, result.parameters, rawValue, result.gainHex, result.status]);
+      logRows.push([profileName, parameterName, result.parameters, rawValue, result.gainDec, result.gainHex, result.status]);
       return result;
     }
 
@@ -314,15 +370,16 @@
       profileStats[profileName].defaulted += 1;
       result.xmlValueDec = rawValue;
       result.status = 'Non-decimal value found; MAP default kept';
-      logRows.push([profileName, parameterName, result.parameters, rawValue, result.gainHex, result.status]);
+      logRows.push([profileName, parameterName, result.parameters, rawValue, result.gainDec, result.gainHex, result.status]);
       return result;
     }
 
     profileStats[profileName].mapped += 1;
     result.xmlValueDec = valueForHex;
+    result.gainDec = valueForHex;
     result.gainHex = hexValue;
     result.status = 'Mapped from XML';
-    logRows.push([profileName, parameterName, result.parameters, valueForHex, hexValue, result.status]);
+    logRows.push([profileName, parameterName, result.parameters, valueForHex, result.gainDec, hexValue, result.status]);
     return result;
   }
 
@@ -342,13 +399,7 @@
     const now = new Date();
     const instructionRows = [
       ['User Instruction', 'Use the manual Copy&Paste operation by following steps:'],
-      ['Step 1', 'Select required Sound Mode in the column D named DSP.'],
-      ['Step 2', 'Select whole data from the column GAIN(HEX).'],
-      ['Step 3', 'Open AQ.XLS file.'],
-      ['Step 4', 'Filter corresponding sound mode in the AQ.xls file.'],
-      ['Step 5', 'Select required TV model in the column.'],
-      ['Step 6', 'Paste selected values to this column.'],
-      ['Step 7', 'Repeat steps 5-6 for other TV models, if required.'],
+      ['Step 1', 'Use the DEC column and copy its contents (656 cells) into AQ.xls, starting from row 1166 (Entertainment Custom Mode), into the Gain (Dec) column corresponding to the currently tuned TV model.'],
     ];
     const aoa = [
       [APP_NAME],
@@ -361,7 +412,7 @@
       ...instructionRows,
       [],
       ['DAP Audio settings in XML file', '', '', 'DAP Audio settings in XLS file', '', '', ''],
-      ['XML Profile name', 'XML parameter name', 'XML parameter value (DEC)', 'DSP', 'Description', 'Parameters', 'Gain (Hex)'],
+      ['XML Profile name', 'XML parameter name', 'XML parameter value (DEC)', 'DSP', 'Description', 'Parameters', 'Gain (Dec)'],
     ];
 
     mappedRows.forEach((row) => {
@@ -372,7 +423,7 @@
         row.dsp,
         row.description,
         row.parameters,
-        row.gainHex,
+        row.gainDec,
       ]);
     });
 
@@ -388,8 +439,8 @@
     ];
     ws['!merges'] = [
       { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
-      { s: { r: 15, c: 0 }, e: { r: 15, c: 2 } },
-      { s: { r: 15, c: 3 }, e: { r: 15, c: 6 } },
+      { s: { r: 10, c: 0 }, e: { r: 10, c: 2 } },
+      { s: { r: 10, c: 3 }, e: { r: 10, c: 6 } },
     ];
 
     const wb = XLSX.utils.book_new();
@@ -410,7 +461,7 @@
       ['Missing XML/profile rows', summary.missingRows],
       ['Default rows kept', summary.defaultRows],
       [],
-      ['Profile', 'XML parameter', 'XLS Parameters', 'XML value DEC', 'Gain HEX', 'Operation'],
+      ['Profile', 'XML parameter', 'XLS Parameters', 'XML value DEC', 'Gain DEC', 'Gain HEX', 'Operation'],
       ...logRows,
     ];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -419,6 +470,7 @@
       { wch: 34 },
       { wch: 34 },
       { wch: 24 },
+      { wch: 14 },
       { wch: 14 },
       { wch: 32 },
     ];

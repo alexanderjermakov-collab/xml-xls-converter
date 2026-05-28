@@ -82,7 +82,14 @@ h2 {
   letter-spacing: 0;
 }
 
-.version-badge {
+.header-meta {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.version-badge,
+.author-badge {
   display: grid;
   gap: 4px;
   min-width: 150px;
@@ -93,12 +100,17 @@ h2 {
 }
 
 .version-badge span,
-.version-badge small {
+.version-badge small,
+.author-badge span {
   color: #bfd0ec;
 }
 
 .version-badge strong {
   font-size: 34px;
+}
+
+.author-badge strong {
+  font-size: 18px;
 }
 
 .workspace {
@@ -347,7 +359,12 @@ tr:last-child td {
     display: grid;
   }
 
-  .version-badge {
+  .header-meta {
+    display: grid;
+  }
+
+  .version-badge,
+  .author-badge {
     text-align: left;
   }
 
