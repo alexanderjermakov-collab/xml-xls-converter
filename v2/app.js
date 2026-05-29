@@ -1,7 +1,7 @@
 (function () {
   const APP_NAME = 'Sharp Titan TV. AQ. XML-XLS converter';
-  const APP_VERSION = '2.6';
-  const RELEASE_DATE = '2026-05-28';
+  const APP_VERSION = '2.7';
+  const RELEASE_DATE = '2026-05-29';
   const SUPPORTED_PROFILES = ['Movie', 'Music', 'Voice', 'User Selectable'];
   const EXCLUDED_PROFILES = ['Game', 'Night', 'Off'];
   const DEFAULT_OUTPUT_NAME = 'Titan TV. DAP AQ. XML-XLS converter. Output.xlsx';
@@ -184,13 +184,13 @@
     const parameter = comparableName(row.parameters);
 
     if (parameter === 'deamountmax') {
-      return '163';
+      return hexToSignedDec(row.gainHex);
     }
     if (parameter === 'deamountmin') {
       return '0';
     }
     if (parameter === 'surroundboostmax') {
-      return '964';
+      return hexToSignedDec(row.gainHex);
     }
     if (parameter === 'surroundboostmin') {
       return '0';
@@ -206,6 +206,9 @@
     const parameter = comparableName(row.parameters);
     if (parameter === 'speakerangle') {
       return 'virtualizer-surround-speaker-angle';
+    }
+    if (parameter === 'ieqamount' || normalizeName(row.xmlParameter) === 'eq-amount') {
+      return 'ieq-amount';
     }
     return normalizeName(row.xmlParameter);
   }
